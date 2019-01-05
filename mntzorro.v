@@ -484,9 +484,7 @@ module MNTZorro_v0_1_S00_AXI
 
   // ram arbiter
   reg zorro_ram_read_request = 0;
-  reg zorro_ram_read_done = 1;
   reg zorro_ram_write_request = 0;
-  reg zorro_ram_write_done = 1;
   reg [23:0] zorro_ram_read_addr;
   reg [15:0] zorro_ram_read_data;
   reg [1:0] zorro_ram_read_bytes;
@@ -526,7 +524,7 @@ module MNTZorro_v0_1_S00_AXI
   genvar i;
   
   generate
-      for (i=0; i < 15; i=i+1) begin : ZORRO_DATABUS
+      for (i=0; i < 16; i=i+1) begin : ZORRO_DATABUS
           IOBUF u_iobuf_dq 
           (
               .I  (data_out[i]),
@@ -703,6 +701,7 @@ module MNTZorro_v0_1_S00_AXI
   reg [15:0] regread_addr = 0;
   reg [15:0] regwrite_addr = 0;
   
+  reg [15:0] count_writes = 0;
 
   reg [15:0] testreg_1 = 0;
   
@@ -723,11 +722,12 @@ module MNTZorro_v0_1_S00_AXI
         dataout_enable <= 0;
         dataout <= 0;
         slaven <= 0;
-        zorro_ram_read_done <= 1;
         z_ovr <= 0;
         z_confout <= 0;
         z3_confdone <= 0;
         zorro_state <= DECIDE_Z2_Z3;
+        
+        count_writes <= 0;
       end
       
       DECIDE_Z2_Z3: begin
@@ -850,6 +850,7 @@ module MNTZorro_v0_1_S00_AXI
             dataout <= 0;
             datain_counter <= 0;
             z_ovr <= 1;
+            count_writes <= count_writes + 1;
             zorro_state <= WAIT_WRITE;
             
           end else if (z2_write && zaddr_in_reg) begin
@@ -895,12 +896,11 @@ module MNTZorro_v0_1_S00_AXI
       WAIT_READ3: begin
         zorro_ram_read_addr <= last_addr;
         zorro_ram_read_request <= 1;
-        zorro_ram_read_done <= 0;
         zorro_state <= WAIT_READ2;
       end
       
       WAIT_READ2: begin
-        if (!zorro_ram_read_request) begin
+        if (!zorro_ram_read_request && slv_reg0[30]==0) begin
           read_counter <= read_counter + 1;
           data_out <= slv_reg1; //zorro_ram_read_data;
           
@@ -911,13 +911,13 @@ module MNTZorro_v0_1_S00_AXI
       end
       
       WAIT_WRITE: begin
-        //if (!zorro_ram_write_request) begin
+        if (!zorro_ram_write_request && slv_reg0[31]==0) begin
           if (datastrobe_synced) begin
             zorro_write_capture_bytes <= {~znUDS_sync[1],~znLDS_sync[1]};
             zorro_write_capture_data <= zdata_in_sync; //_sync;
             zorro_state <= WAIT_WRITE2;
           end
-        //end
+        end
       end
       
       WAIT_WRITE2: begin
@@ -992,10 +992,10 @@ module MNTZorro_v0_1_S00_AXI
     endcase
     
     if (slv_reg0[31]==1'b1) begin
-        zorro_ram_write_request <= 0;
+      zorro_ram_write_request <= 0;
     end
     if (slv_reg0[30]==1'b1) begin
-        zorro_ram_read_request <= 0;
+      zorro_ram_read_request <= 0;
     end
   end
 
@@ -1010,7 +1010,7 @@ module MNTZorro_v0_1_S00_AXI
 	    case ( axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] )
 	      2'h0   : reg_data_out <= last_addr;
 	      2'h1   : reg_data_out <= {16'h0000, zorro_write_capture_data};
-	      2'h2   : reg_data_out <= { zaddr_sync2, 1'b0 };
+	      //2'h2   : reg_data_out <= { ZORRO_DATA_IN };
 	      //2'h2   : reg_data_out <= {ZORRO_NIORST,ZORRO_NFCS,ZORRO_NCCS,ZORRO_READ,ZORRO_DOE,ZORRO_NUDS,ZORRO_NLDS,ZORRO_NDS1,ZORRO_NDS0};
 	      //2'h2   : reg_data_out <= {ZORRO_NIORST,ZORRO_NFCS,ZORRO_NCCS,ZORRO_READ,ZORRO_DOE,ZORRO_NUDS,ZORRO_NLDS,ZORRO_NDS1,ZORRO_NDS0};
           2'h3   : reg_data_out <= {zorro_ram_write_request, zorro_ram_read_request, zorro_write_capture_bytes, 4'b0, 8'b0, 8'b0, zorro_state};

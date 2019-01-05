@@ -341,13 +341,10 @@ u32 dump_vdma_status(XAxiVdma *InstancePtr)
     return status;
 }
 
-static u32 fb_fill_offset=0;
-
 void fb_fill() {
 	for (int i=0; i<1280*720; i++) {
-		framebuffer[i] = 0xffffffff-i/1280;
+		framebuffer[i] = 0xffffffff;
 	}
-	fb_fill_offset++;
 }
 
 int main()
@@ -399,15 +396,13 @@ int main()
 
     init_platform();
 
-    framebuffer=(u8*)0x110000;
+    framebuffer=(u32*)0x110000;
 
     mandel(0);
 
-    //Xil_DCacheDisable();
+    Xil_DCacheDisable();
 
     fb_fill();
-
-    //MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, 0xbabecafe);
 
     // enable HDMI
     hdmi_ctrl_init();
@@ -434,19 +429,24 @@ int main()
     uint16_t rect_y2=0;
     uint16_t rect_rgb=0;
 
+	const uint32_t base=0x610000;
+
+	u8* mem = (u8*)framebuffer;
+
     while(1) {
         //uint32_t zbits = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
         uint32_t zstate = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
 
         u32 writereq = (zstate&(1<<31));
         u32 readreq = (zstate&(1<<30));
+        u32 upper_byte=(zstate&(1<<29));
+        u32 lower_byte=(zstate&(1<<28));
 
-        uint32_t zstate_orig = zstate;
         zstate = zstate&0xf;
         if (zstate>40) zstate=41;
 
-        //uint32_t zaddr = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
-        //printf("ADDR: %lx\n",zaddr);
+		//uint32_t zdata = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
+        //printf("DATA: %lx\n",zdata);
 
         //if (zstate!=old_zstate) {
         	/*printf("addr: %08lx data: %04lx %s %s %s %s strb: %lx%lx%lx%lx %ld %s\r\n",zaddr,zdata,
@@ -464,57 +464,64 @@ int main()
 
         //printf("ZSTA: %s write: %d read: %d data: %lx\n", zstates[zstate],!!writereq,!!readreq,zdata);
 
-        	if (writereq) {
-                uint32_t zaddr = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
-                uint32_t zdata = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET);
-        		printf("WRTE addr: %08lx data: %08lx\n",zaddr,zdata);
+		if (!need_req_ack && writereq) {
+			uint32_t zaddr = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
+			uint32_t zdata = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET);
+			//uint32_t count_writes = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
+			//printf("WRTE %08lx <- %08lx [%d%d]\n",zaddr,zdata,upper_byte,lower_byte);
 
-        		const uint32_t base=0x610000;
 
-                if (zaddr==base) 	  rect_x1=zdata;
-                else if (zaddr==base+2) rect_y1=zdata;
-                else if (zaddr==base+4) rect_x2=zdata;
-                else if (zaddr==base+6) rect_y2=zdata;
-                else if (zaddr==base+8) {
-                	rect_rgb=zdata;
-                	uint32_t pitch=1280*2;
-                	// fill rectangle
-                	for (uint16_t y=rect_y1; y<=rect_y2; y++) {
-                		for (uint16_t x=rect_x1; x<=rect_x2; x++) {
-                			((u16*)framebuffer)[y*pitch+x]=rect_rgb;
-                		}
-                	}
-                	Xil_DCacheFlush();
-                }
-                else if (zaddr>=0x610000) {
-                	((u16*)framebuffer)[zaddr-0x610000] = zdata;
-                	((u16*)framebuffer)[zaddr-0x610000+1] = zdata;
-                }
+			/*if (zaddr==base) 	  rect_x1=zdata;
+			else if (zaddr==base+2) rect_y1=zdata;
+			else if (zaddr==base+4) rect_x2=zdata;
+			else if (zaddr==base+6) rect_y2=zdata;
+			else if (zaddr==base+8) {
+				rect_rgb=zdata;
+				uint32_t pitch=1280*2;
+				// fill rectangle
+				for (uint16_t y=rect_y1; y<=rect_y2; y++) {
+					for (uint16_t x=rect_x1; x<=rect_x2; x++) {
+						((u16*)framebuffer)[y*pitch+x]=rect_rgb;
+					}
+				}
+				//Xil_DCacheFlush();
+			}*/
+			if (zaddr>=0x610000) {
+				u32 addr = zaddr-base;
+			    //addr ^= 2ul; // swap words (BE -> LE)
 
-        		// ack the write
-        		MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<31));
-        		need_req_ack = 1;
-        	}
-        	else if (readreq) {
-                uint32_t zaddr = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
-        		//printf("READ addr: %08lx\n",zaddr);
-        		need_req_ack = 1;
-        		MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, ((u16*)framebuffer)[zaddr]);
-        		MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<30));
-        	}
-        //}
+			    // swap bytes
+				if (upper_byte) mem[addr]   = zdata>>8;
+				if (lower_byte) mem[addr+1] = zdata;
+			}
+
+			// ack the write
+			MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<31));
+			need_req_ack = 1;
+		}
+		else if (!need_req_ack && readreq) {
+			uint32_t zaddr = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
+			//printf("READ addr: %08lx\n",zaddr);
+
+			if (zaddr>=0x610000) {
+				u32 addr = zaddr-base;
+			    //addr ^= 2ul; // swap words (BE -> LE)
+
+			    u16 ubyte = mem[addr]<<8;
+			    u16 lbyte = mem[addr+1];
+
+			    MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, ubyte|lbyte);
+			}
+
+			// ack the read
+			MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<30));
+			need_req_ack = 1;
+		}
 
         if (need_req_ack && !writereq && !readreq) {
     		MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, 0);
     		need_req_ack = 0;
         }
-
-        old_zstate = zstate;
-    	//usleep(100);
-
-    	//char buffer[2];
-    	//int status = hdmi_ctrl_read_byte(0x3d,buffer);
-    	//printf("[%d] hotplug: 0x%x\n",status,buffer[1]);
     }
 
     cleanup_platform();
