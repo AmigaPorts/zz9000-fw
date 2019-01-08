@@ -133,6 +133,11 @@ module MNTZorro_v0_1_S00_AXI
 	reg [`C_S_AXI_DATA_WIDTH-1:0]	 reg_data_out;
 	integer	 byte_index;
 	reg	 aw_en;
+	
+	reg [`C_S_AXI_DATA_WIDTH-1:0] out_reg0;
+	reg [`C_S_AXI_DATA_WIDTH-1:0] out_reg1;
+	reg [`C_S_AXI_DATA_WIDTH-1:0] out_reg2;
+	reg [`C_S_AXI_DATA_WIDTH-1:0] out_reg3;	
 
 	// I/O Connections assignments
 
@@ -427,8 +432,8 @@ module MNTZorro_v0_1_S00_AXI
   reg zaddr_in_ram = 0;
   reg zaddr_in_reg = 0;
   reg zaddr_autoconfig = 0;
-  reg [31:0] ram_low = 32'h610000;
-  reg [31:0] ram_high = 32'h9f0000;
+  reg [31:0] ram_low = 32'h600000;
+  reg [31:0] ram_high = 32'ha00000;
   reg [31:0] reg_low  = 32'h600000;
   reg [31:0] reg_high = 32'h601000;
   reg z2_uds = 0;
@@ -498,7 +503,7 @@ module MNTZorro_v0_1_S00_AXI
   reg [15:0] zorro_write_capture_data = 0;
   
   // level shifter direction pins
-  assign ZORRO_DATADIR     = ZORRO_DOE & ((dataout_enable)); // d2-d9  d10-15, d0-d1
+  assign ZORRO_DATADIR     = ZORRO_DOE & (dataout_enable); // d2-d9  d10-15, d0-d1
   assign ZORRO_ADDRDIR     = ZORRO_DOE & (dataout_z3_latched); // a16-a23 <- input  a8-a15 <- input
   
   wire ZORRO_DATA_T = ~(ZORRO_DOE & dataout_enable);
@@ -550,6 +555,7 @@ module MNTZorro_v0_1_S00_AXI
   assign ZORRO_NCFGOUT = 1;
 
   always @(posedge S_AXI_ACLK) begin
+  
     znUDS_sync  <= {znUDS_sync[1:0],ZORRO_NUDS};
     znLDS_sync  <= {znLDS_sync[1:0],ZORRO_NLDS};
     znAS_sync   <= {znAS_sync[1:0],ZORRO_NCCS};
@@ -578,7 +584,7 @@ module MNTZorro_v0_1_S00_AXI
     z2_lds <= (znLDS_sync==0);
     
     zaddr_in_ram <= (z2_mapped_addr>=ram_low && z2_mapped_addr<ram_high);
-    zaddr_in_reg <= (z2_mapped_addr>=reg_low && z2_mapped_addr<reg_high);
+    zaddr_in_reg <= 0; //(z2_mapped_addr>=reg_low && z2_mapped_addr<reg_high);
     
     if (znAS_sync[1]==0 && zaddr_sync2>=`AUTOCONF_LOW && zaddr_sync2<`AUTOCONF_HIGH)
       zaddr_autoconfig <= 1'b1;
@@ -714,7 +720,7 @@ module MNTZorro_v0_1_S00_AXI
       end
       
       RESET: begin
-        ram_low   <= 'h610000;
+        ram_low   <= 'h600000;
         ram_high  <= 'ha00000; //+ `RAM_SIZE-4;
         reg_low   <= 'h600000;
         reg_high  <= 'h60f000;
@@ -997,6 +1003,11 @@ module MNTZorro_v0_1_S00_AXI
     if (slv_reg0[30]==1'b1) begin
       zorro_ram_read_request <= 0;
     end
+    
+    out_reg0 <= last_addr;
+    out_reg1 <= {16'h0000, zorro_write_capture_data};
+    out_reg2 <= 0; // {ZORRO_NIORST,ZORRO_NFCS,ZORRO_NCCS,ZORRO_READ,ZORRO_DOE,ZORRO_NUDS,ZORRO_NLDS,ZORRO_NDS1,ZORRO_NDS0};
+    out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_write_capture_bytes, 4'b0, 8'b0, 8'b0, zorro_state};
   end
 
 
@@ -1008,12 +1019,9 @@ module MNTZorro_v0_1_S00_AXI
 	  begin
 	    // Address decoding for reading registers
 	    case ( axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] )
-	      2'h0   : reg_data_out <= last_addr;
-	      2'h1   : reg_data_out <= {16'h0000, zorro_write_capture_data};
-	      //2'h2   : reg_data_out <= { ZORRO_DATA_IN };
-	      //2'h2   : reg_data_out <= {ZORRO_NIORST,ZORRO_NFCS,ZORRO_NCCS,ZORRO_READ,ZORRO_DOE,ZORRO_NUDS,ZORRO_NLDS,ZORRO_NDS1,ZORRO_NDS0};
-	      //2'h2   : reg_data_out <= {ZORRO_NIORST,ZORRO_NFCS,ZORRO_NCCS,ZORRO_READ,ZORRO_DOE,ZORRO_NUDS,ZORRO_NLDS,ZORRO_NDS1,ZORRO_NDS0};
-          2'h3   : reg_data_out <= {zorro_ram_write_request, zorro_ram_read_request, zorro_write_capture_bytes, 4'b0, 8'b0, 8'b0, zorro_state};
+	      2'h0   : reg_data_out <= out_reg0;
+	      2'h1   : reg_data_out <= out_reg1;
+          2'h3   : reg_data_out <= out_reg3;
 	      default : reg_data_out <= 'hdeadcafe;
 	    endcase
 	  end

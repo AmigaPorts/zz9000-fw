@@ -57,10 +57,11 @@
 #include "xaxivdma.h"
 #include "xvtc.h"
 #include "xil_cache.h"
+#include "xclk_wiz.h"
 
 typedef u8 AddressType;
 #define IIC_DEVICE_ID	XPAR_XIICPS_0_DEVICE_ID
-#define VDMA_DEVICE_ID	XPAR_AXI_VDMA_0_DEVICE_ID
+#define VDMA_DEVICE_ID	XPAR_AXIVDMA_0_DEVICE_ID
 #define HDMI_I2C_ADDR 	0x3b
 #define IIC_SCLK_RATE	400000
 
@@ -114,8 +115,7 @@ int hdmi_ctrl_read_byte(u8 addr, u8* buffer)
 	return status;
 }
 
-
-static const u8 sii9022_init[] = {
+static u8 sii9022_init[] = {
 	0x1e, 0x00,	// TPI Device Power State Control Data (R/W)
 
 	0x09, 0x00, //
@@ -126,7 +126,7 @@ static const u8 sii9022_init[] = {
 
 	0x1a, 0x10,	// TPI System Control (R/W)
 
-	0x00, 0x4c,	// PixelClock/10000 - LSB
+	0x00, 0x4c,	// PixelClock/10000 - LSB          u16:6
 	0x01, 0x1d,	// PixelClock/10000 - MSB
 	0x02, 0x70,	// Frequency in HZ - LSB
 	0x03, 0x17,	// Vertical Frequency in HZ - MSB
@@ -209,7 +209,7 @@ int init_vdma(int hsize, int vsize) {
 	ReadCfg.EnableFrameCounter  = 0;      /* Endless transfers */
 	ReadCfg.FixedFrameStoreAddr = 0;      /* We are not doing parking */
 
-	ReadCfg.FrameStoreStartAddr[0] = framebuffer;
+	ReadCfg.FrameStoreStartAddr[0] = (u32)framebuffer;
 
 	status = XAxiVdma_DmaConfig(&vdma, XAXIVDMA_READ, &ReadCfg);
 	if (status != XST_SUCCESS) {
@@ -253,7 +253,6 @@ int init_vtc() {
 		xil_printf("Failed: XVtc_CfgInitialize\r\n");
 		return (XST_FAILURE);
 	}
-
 
 	printf("OK: XVtc_CfgInitialize\n");
 
@@ -312,6 +311,48 @@ void dump_vtc_status()
 	xil_printf("\n\r");
 }
 
+// example: XVTC_VMODE_VGA, 28000000, 60
+void set_video_mode(u16 mode, u32 pixelclock_hz, u16 vhz)
+{
+	XVtc_SetGeneratorVideoMode(&VtcInst, mode);
+
+	XVtc_Timing timing;
+	XVtc_GetGeneratorTiming(&VtcInst, &timing);
+
+	XVtc_Signal signal;
+	XVtc_HoriOffsets horiOffsets;
+	XVtc_Polarity polarity;
+
+	XVtc_ConvTiming2Signal(&VtcInst, &timing, &signal, &horiOffsets, &polarity);
+
+	XVtc_RegUpdateEnable(&VtcInst);
+	XVtc_EnableGenerator(&VtcInst);
+
+	/*
+	    0x00, 0x4c,	// PixelClock/10000 - LSB
+		0x01, 0x1d,	// PixelClock/10000 - MSB
+		0x02, 0x70,	// Frequency in HZ - LSB
+		0x03, 0x17,	// Vertical Frequency in HZ - MSB
+		0x04, 0x70,	// Total Pixels per line - LSB
+		0x05, 0x06,	// Total Pixels per line - MSB
+		0x06, 0xEE,	// Total Lines - LSB
+		0x07, 0x02,	// Total Lines - MSB
+		0x08, 0x70, // pixel repeat rate?
+		0x1a, 0x01, // DVI
+	*/
+
+	u8* sii_mode=sii9022_init+12;
+
+	sii_mode[2*0+1] = pixelclock_hz/10000;
+	sii_mode[2*1+1] = (pixelclock_hz/10000)>>8;
+	sii_mode[2*2+1] = vhz*100;
+	sii_mode[2*3+1] = (vhz*100)>>8;
+	sii_mode[2*4+1] = signal.HTotal;
+	sii_mode[2*5+1] = signal.HTotal>>8;
+	sii_mode[2*6+1] = signal.V0Total;
+	sii_mode[2*7+1] = signal.V0Total>>8;
+}
+
 u32 dump_vdma_status(XAxiVdma *InstancePtr)
 {
     u32 status = XAxiVdma_GetStatus(InstancePtr, XAXIVDMA_READ);
@@ -345,6 +386,89 @@ void fb_fill() {
 	for (int i=0; i<1280*720; i++) {
 		framebuffer[i] = 0xffffffff;
 	}
+}
+
+static XClk_Wiz clkwiz;
+
+void pixelclock_init(int mhz) {
+	XClk_Wiz_Config conf;
+	XClk_Wiz_CfgInitialize(&clkwiz, &conf, XPAR_CLK_WIZ_0_BASEADDR);
+
+	u32 phase = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x20C);
+	printf("phase: %lu\n", phase);
+	u32 duty = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x210);
+	printf("duty: %lu\n", duty);
+	u32 divide = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x208);
+	printf("divide: %lu\n", divide);
+	u32 muldiv = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x200);
+	printf("muldiv: %x\n", muldiv);
+
+	/*Writing this value sets DIVCLK_DIVIDE  value to 1 and CLKFBOUT_MULT  to 10.*/
+	//XClk_Wiz_WriteReg(xclk_config0->BaseAddr, 0x200, 0x00000A01);
+
+	u32 mul = 11;
+	u32 div = 1;
+	u32 otherdiv = 11;
+
+	if (mhz==50) {
+		mul = 34;
+		div = 3;
+		otherdiv = 17;
+	} else if (mhz==40) {
+		mul = 40;
+		div = 3;
+		otherdiv = 25;
+	} else if (mhz==75) {
+		mul = 11;
+		div = 1;
+		otherdiv = 11;
+	}
+
+	XClk_Wiz_WriteReg(XPAR_CLK_WIZ_0_BASEADDR, 0x200, (mul<<8) | div);
+	XClk_Wiz_WriteReg(XPAR_CLK_WIZ_0_BASEADDR,  0x208, otherdiv);
+
+	/*Writing this value sets CLKOUT0_DIVIDE to 5. The VCO frequency being 1000 MHz,
+	dividing it by CLKOUT0_DIVIDE will give the 200 MHz frequency on the clkout1 in the IP.
+ 	Check for the status register, if the status register value is 0x1, then go to step 3*/
+
+
+	// load configuration
+	XClk_Wiz_WriteReg(XPAR_CLK_WIZ_0_BASEADDR,  0x25C, 0x00000003);
+	//XClk_Wiz_WriteReg(XPAR_CLK_WIZ_0_BASEADDR,  0x25C, 0x00000001);
+
+	phase = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x20C);
+	printf("phase: %lu\n", phase);
+	duty = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x210);
+	printf("duty: %lu\n", duty);
+	divide = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x208);
+	printf("divide: %lu\n", divide);
+	muldiv = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x200);
+	printf("muldiv: %x\n", muldiv);
+}
+
+void video_system_init(int vmode, int hres, int vres, int mhz, int vhz) {
+
+    printf("pixelclock_init()...\n");
+	pixelclock_init(mhz);
+
+    printf("hdmi_ctrl_init()...\n");
+    hdmi_ctrl_init();
+
+    printf("init_vtc()...\n");
+
+    init_vtc();
+
+    printf("set_video_mode()...\n");
+    set_video_mode(vmode, mhz, vhz);
+
+    printf("init_vdma()...\n");
+    init_vdma(hres, vres);
+    printf("done.\n");
+
+    usleep(10000);
+
+    dump_vdma_status(&vdma);
+    dump_vtc_status();
 }
 
 int main()
@@ -398,30 +522,26 @@ int main()
 
     framebuffer=(u32*)0x110000;
 
-    mandel(0);
+    //mandel(0);
+
+    printf("    _______________   ___   ___   ___  \n");
+    printf("   |___  /___  / _ \\ / _ \\ / _ \\ / _ \\ \n");
+    printf("      / /   / / (_) | | | | | | | | | |\n");
+    printf("     / /   / / \\__, | | | | | | | | | |\n");
+    printf("    / /__ / /__  / /| |_| | |_| | |_| |\n");
+    printf("   /_____/_____|/_/  \\___/ \\___/ \\___/ \n\n");
 
     Xil_DCacheDisable();
 
     fb_fill();
 
-    // enable HDMI
-    hdmi_ctrl_init();
-
-    //printf("init_vtc()...\n");
-
-    //init_vtc();
-
-    printf("done. init_vdma()...\n");
-    init_vdma(1280,720);
-    printf("done.\n");
-
-    usleep(10000);
-
-    dump_vdma_status(&vdma);
-    //dump_vtc_status();
+    //video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60);
+    video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
 
     int old_zstate = 0;
     int need_req_ack = 0;
+
+    // registers
 
     uint16_t rect_x1=0;
     uint16_t rect_x2=0;
@@ -433,20 +553,23 @@ int main()
 
 	u8* mem = (u8*)framebuffer;
 
-    while(1) {
-        //uint32_t zbits = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
-        uint32_t zstate = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
+	// FIXME!
+#define MNTZ_BASE_ADDR 0x43C00000
 
-        u32 writereq = (zstate&(1<<31));
-        u32 readreq = (zstate&(1<<30));
-        u32 upper_byte=(zstate&(1<<29));
-        u32 lower_byte=(zstate&(1<<28));
+#define MNT_FB_BASE     0x610000
+#define MNT_BASE_MODE   0x600000
+#define MNT_BASE_RECTOP 0x600010
+
+    while(1) {
+        uint32_t zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
+
+        u32 writereq   = (zstate&(1<<31));
+        u32 readreq    = (zstate&(1<<30));
+        u32 upper_byte = (zstate&(1<<29));
+        u32 lower_byte = (zstate&(1<<28));
 
         zstate = zstate&0xf;
         if (zstate>40) zstate=41;
-
-		//uint32_t zdata = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
-        //printf("DATA: %lx\n",zdata);
 
         //if (zstate!=old_zstate) {
         	/*printf("addr: %08lx data: %04lx %s %s %s %s strb: %lx%lx%lx%lx %ld %s\r\n",zaddr,zdata,
@@ -465,29 +588,44 @@ int main()
         //printf("ZSTA: %s write: %d read: %d data: %lx\n", zstates[zstate],!!writereq,!!readreq,zdata);
 
 		if (!need_req_ack && writereq) {
-			uint32_t zaddr = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
-			uint32_t zdata = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET);
+			uint32_t zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
+			uint32_t zdata = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET);
 			//uint32_t count_writes = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
 			//printf("WRTE %08lx <- %08lx [%d%d]\n",zaddr,zdata,upper_byte,lower_byte);
 
 
-			/*if (zaddr==base) 	  rect_x1=zdata;
-			else if (zaddr==base+2) rect_y1=zdata;
-			else if (zaddr==base+4) rect_x2=zdata;
-			else if (zaddr==base+6) rect_y2=zdata;
-			else if (zaddr==base+8) {
-				rect_rgb=zdata;
-				uint32_t pitch=1280*2;
-				// fill rectangle
-				for (uint16_t y=rect_y1; y<=rect_y2; y++) {
-					for (uint16_t x=rect_x1; x<=rect_x2; x++) {
-						((u16*)framebuffer)[y*pitch+x]=rect_rgb;
+			if (zaddr>=600000 && zaddr<610000) {
+				// register area
+
+				// RECTOP
+				if (zaddr==MNT_BASE_RECTOP) 	   rect_x1=zdata;
+				else if (zaddr==MNT_BASE_RECTOP+2) rect_y1=zdata;
+				else if (zaddr==MNT_BASE_RECTOP+4) rect_x2=zdata;
+				else if (zaddr==MNT_BASE_RECTOP+6) rect_y2=zdata;
+				else if (zaddr==MNT_BASE_RECTOP+8) {
+					// fill rectangle
+
+					rect_rgb=zdata;
+					uint32_t pitch=1280*2;
+					// fill rectangle
+					for (uint16_t y=rect_y1; y<=rect_y2; y++) {
+						for (uint16_t x=rect_x1; x<=rect_x2; x++) {
+							((u16*)framebuffer)[y*pitch+x]=rect_rgb;
+						}
+					}
+					//Xil_DCacheFlush();
+				}
+
+				else if (zaddr==MNT_BASE_MODE) {
+					if (zdata==0) {
+					    video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60);
+					} else if (zdata==1) {
+					    video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
 					}
 				}
-				//Xil_DCacheFlush();
-			}*/
-			if (zaddr>=0x610000) {
-				u32 addr = zaddr-base;
+			}
+			else if (zaddr>=MNT_FB_BASE) {
+				u32 addr = zaddr-MNT_FB_BASE;
 			    //addr ^= 2ul; // swap words (BE -> LE)
 
 			    // swap bytes
@@ -496,30 +634,30 @@ int main()
 			}
 
 			// ack the write
-			MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<31));
+			MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<31));
 			need_req_ack = 1;
 		}
 		else if (!need_req_ack && readreq) {
-			uint32_t zaddr = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
+			uint32_t zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
 			//printf("READ addr: %08lx\n",zaddr);
 
-			if (zaddr>=0x610000) {
-				u32 addr = zaddr-base;
+			if (zaddr>=MNTZ_FB_BASE) {
+				u32 addr = zaddr-MNTZ_FB_BASE;
 			    //addr ^= 2ul; // swap words (BE -> LE)
 
 			    u16 ubyte = mem[addr]<<8;
 			    u16 lbyte = mem[addr+1];
 
-			    MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, ubyte|lbyte);
+			    MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, ubyte|lbyte);
 			}
 
 			// ack the read
-			MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<30));
+			MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<30));
 			need_req_ack = 1;
 		}
 
         if (need_req_ack && !writereq && !readreq) {
-    		MNTZORRO_mWriteReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, 0);
+    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, 0);
     		need_req_ack = 0;
         }
     }
