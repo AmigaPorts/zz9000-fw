@@ -538,7 +538,6 @@ int main()
     //video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60);
     video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
 
-    int old_zstate = 0;
     int need_req_ack = 0;
 
     // registers
@@ -549,13 +548,12 @@ int main()
     uint16_t rect_y2=0;
     uint16_t rect_rgb=0;
 
-	const uint32_t base=0x610000;
-
 	u8* mem = (u8*)framebuffer;
 
 	// FIXME!
 #define MNTZ_BASE_ADDR 0x43C00000
 
+#define MNT_REG_BASE    0x600000
 #define MNT_FB_BASE     0x610000
 #define MNT_BASE_MODE   0x600000
 #define MNT_BASE_RECTOP 0x600010
@@ -594,7 +592,7 @@ int main()
 			//printf("WRTE %08lx <- %08lx [%d%d]\n",zaddr,zdata,upper_byte,lower_byte);
 
 
-			if (zaddr>=600000 && zaddr<610000) {
+			if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
 				// register area
 
 				// RECTOP
@@ -617,10 +615,13 @@ int main()
 				}
 
 				else if (zaddr==MNT_BASE_MODE) {
+					printf("mode change: %d\n",zdata);
 					if (zdata==0) {
 					    video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60);
 					} else if (zdata==1) {
 					    video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
+					} else {
+						printf("error: unknown mode\n");
 					}
 				}
 			}
@@ -641,8 +642,8 @@ int main()
 			uint32_t zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
 			//printf("READ addr: %08lx\n",zaddr);
 
-			if (zaddr>=MNTZ_FB_BASE) {
-				u32 addr = zaddr-MNTZ_FB_BASE;
+			if (zaddr>=MNT_FB_BASE) {
+				u32 addr = zaddr-MNT_FB_BASE;
 			    //addr ^= 2ul; // swap words (BE -> LE)
 
 			    u16 ubyte = mem[addr]<<8;
