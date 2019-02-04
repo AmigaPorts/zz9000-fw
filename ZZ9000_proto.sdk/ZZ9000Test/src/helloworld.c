@@ -1,50 +1,3 @@
-/******************************************************************************
-*
-* Copyright (C) 2009 - 2014 Xilinx, Inc.  All rights reserved.
-*
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to deal
-* in the Software without restriction, including without limitation the rights
-* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the Software is
-* furnished to do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in
-* all copies or substantial portions of the Software.
-*
-* Use of the Software is limited solely to applications:
-* (a) running on a Xilinx device, or
-* (b) that interact with a Xilinx device through a bus or interconnect.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-* XILINX  BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
-* OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-* SOFTWARE.
-*
-* Except as contained in this notice, the name of the Xilinx shall not be used
-* in advertising or otherwise to promote the sale, use or other dealings in
-* this Software without prior written authorization from Xilinx.
-*
-******************************************************************************/
-
-/*
- * helloworld.c: simple test application
- *
- * This application configures UART 16550 to baud rate 9600.
- * PS7 UART (Zynq) is not initialized by this application, since
- * bootrom/bsp configures it to baud rate 115200
- *
- * ------------------------------------------------
- * | UART TYPE   BAUD RATE                        |
- * ------------------------------------------------
- *   uartns550   9600
- *   uartlite    Configurable only in HW design
- *   ps7_uart    115200 (configured by bootrom/bsp)
- */
-
 #include <stdio.h>
 #include "platform.h"
 #include "xil_printf.h"
@@ -58,6 +11,8 @@
 #include "xvtc.h"
 #include "xil_cache.h"
 #include "xclk_wiz.h"
+
+#include "gfx.h"
 
 typedef u8 AddressType;
 #define IIC_DEVICE_ID	XPAR_XIICPS_0_DEVICE_ID
@@ -543,9 +498,12 @@ int main()
     // registers
 
     uint16_t rect_x1=0;
-    uint16_t rect_x2=0;
+    uint16_t rect_x2=100;
+    uint16_t rect_x3=100;
     uint16_t rect_y1=0;
     uint16_t rect_y2=0;
+    uint16_t rect_y3=10;
+    uint16_t rect_pitch=800;
     uint16_t rect_rgb=0;
 
 	u8* mem = (u8*)framebuffer;
@@ -591,7 +549,6 @@ int main()
 			//uint32_t count_writes = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
 			//printf("WRTE %08lx <- %08lx [%d%d]\n",zaddr,zdata,upper_byte,lower_byte);
 
-
 			if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
 				// register area
 
@@ -600,18 +557,47 @@ int main()
 				else if (zaddr==MNT_BASE_RECTOP+2) rect_y1=zdata;
 				else if (zaddr==MNT_BASE_RECTOP+4) rect_x2=zdata;
 				else if (zaddr==MNT_BASE_RECTOP+6) rect_y2=zdata;
-				else if (zaddr==MNT_BASE_RECTOP+8) {
-					// fill rectangle
+				else if (zaddr==MNT_BASE_RECTOP+8) rect_pitch=zdata;
 
-					rect_rgb=zdata;
-					uint32_t pitch=1280*2;
+				else if (zaddr==MNT_BASE_RECTOP+0xa) rect_x3=zdata;
+				else if (zaddr==MNT_BASE_RECTOP+0xc) rect_y3=zdata;
+				else if (zaddr==MNT_BASE_RECTOP+0xe) rect_rgb=zdata;
+				else if (zaddr==MNT_BASE_RECTOP+0x10) {
+					rect_rgb=(rect_rgb<<16)|zdata;
+				}
+				else if (zaddr==MNT_BASE_RECTOP+0x12) {
 					// fill rectangle
+					set_fb((uint32_t*)framebuffer, rect_pitch);
+					fill_rect(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
+					//Xil_DCacheFlush();
+				}
+				else if (zaddr==MNT_BASE_RECTOP+0x14) {
+					// copy rectangle
+
+					// fill rectangle
+					uint16_t ys=rect_y3;
 					for (uint16_t y=rect_y1; y<=rect_y2; y++) {
+						uint16_t xs=rect_x3;
 						for (uint16_t x=rect_x1; x<=rect_x2; x++) {
-							((u16*)framebuffer)[y*pitch+x]=rect_rgb;
+							((u32*)framebuffer)[y*rect_pitch+x]=((u32*)framebuffer)[ys*rect_pitch+xs];
+							xs++;
 						}
+						ys++;
 					}
 					//Xil_DCacheFlush();
+				}
+				else if (zaddr==MNT_BASE_RECTOP+0x16) {
+					// fill triangle
+					Vec2 a = {rect_x1, rect_y1};
+					Vec2 b = {rect_x2, rect_y2};
+					Vec2 c = {rect_x3, rect_y3};
+					set_fb((uint32_t*)framebuffer, rect_pitch);
+					fill_triangle(a,b,c,rect_rgb);
+				}
+				else if (zaddr==MNT_BASE_RECTOP+0x20) {
+					// demo
+					set_fb((uint32_t*)framebuffer, rect_pitch);
+					render_faces(zdata);
 				}
 
 				else if (zaddr==MNT_BASE_MODE) {
