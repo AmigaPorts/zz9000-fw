@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="210mm"
+   height="297mm"
+   viewBox="0 0 210 297"
+   version="1.1"
+   id="svg8"
+   inkscape:export-filename="/home/mntmn/code/mnt-computer/reform04.png"
+   inkscape:export-xdpi="300"
+   inkscape:export-ydpi="300"
+   inkscape:version="0.92.1 r15371"
+   sodipodi:docname="zz9000.svg">
+  <defs
+     id="defs2" />
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="5.6"
+     inkscape:cx="189.62657"
+     inkscape:cy="1049.372"
+     inkscape:document-units="mm"
+     inkscape:current-layer="layer1"
+     showgrid="false"
+     inkscape:window-width="2560"
+     inkscape:window-height="1376"
+     inkscape:window-x="0"
+     inkscape:window-y="27"
+     inkscape:window-maximized="1" />
+  <metadata
+     id="metadata5">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <rect
+       style="color:#000000;clip-rule:nonzero;display:inline;overflow:visible;visibility:visible;opacity:1;isolation:auto;mix-blend-mode:normal;color-interpolation:sRGB;color-interpolation-filters:linearRGB;solid-color:#000000;solid-opacity:1;fill:#000000;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:0.31113544;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1;color-rendering:auto;image-rendering:auto;shape-rendering:auto;text-rendering:auto;enable-background:accumulate"
+       id="rect4503"
+       width="51.156574"
+       height="7.1252108"
+       x="15.955655"
+       y="19.257673"
+       inkscape:export-xdpi="300"
+       inkscape:export-ydpi="300" />
+    <flowRoot
+       xml:space="preserve"
+       id="flowRoot4485"
+       style="font-style:normal;font-weight:normal;font-size:20px;line-height:125%;font-family:Sans;letter-spacing:0px;word-spacing:0px;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;"
+       transform="matrix(0.26458333,0,0,0.26458333,-1.0394345,14.410343)"
+       inkscape:export-xdpi="300"
+       inkscape:export-ydpi="300"><flowRegion
+         id="flowRegion4487"
+         style="fill:#ffffff;fill-opacity:1;letter-spacing:0px;"><rect
+           id="rect4489"
+           width="450"
+           height="137.14285"
+           x="70"
+           y="20.376827"
+           style="fill:#ffffff;fill-opacity:1;letter-spacing:0px;" /></flowRegion><flowPara
+         id="flowPara4491"
+         style="font-style:italic;font-variant:normal;font-weight:bold;font-stretch:normal;font-family:'Inter UI';-inkscape-font-specification:'Inter UI Bold Italic';fill:#ffffff;fill-opacity:1;letter-spacing:0px;">ZZ9000 FOR AMI<flowSpan
+   style="letter-spacing:-0.36px"
+   id="flowSpan4519">GA</flowSpan> </flowPara></flowRoot>    <flowRoot
+       xml:space="preserve"
+       id="flowRoot4493"
+       style="fill:black;stroke:none;stroke-opacity:1;stroke-width:1px;stroke-linejoin:miter;stroke-linecap:butt;fill-opacity:1;font-family:Sans;font-style:normal;font-weight:normal;font-size:20px;line-height:125%;letter-spacing:0px;word-spacing:0px"
+       inkscape:export-xdpi="300"
+       inkscape:export-ydpi="300"><flowRegion
+         id="flowRegion4495"><rect
+           id="rect4497"
+           width="112.14286"
+           height="32.142857"
+           x="85.89286"
+           y="129.12683" /></flowRegion><flowPara
+         id="flowPara4499" /></flowRoot>  </g>
+</svg>
