@@ -475,6 +475,7 @@ module MNTZorro_v0_1_S00_AXI
   reg dtack = 0;
   reg dtack_latched = 0;
 
+  reg z_reset = 0;
   reg z_cfgin = 0;
   reg z_cfgin_lo = 0;
   reg z3_confdone = 0;
@@ -552,10 +553,12 @@ module MNTZorro_v0_1_S00_AXI
         end
     endgenerate
 
-  assign ZORRO_NCFGOUT = 1;
+  // autoconf output signal
+
+  reg z_confout = 0;
+  assign ZORRO_NCFGOUT = ZORRO_NCFGIN?1'b1:(~z_confout);
 
   always @(posedge S_AXI_ACLK) begin
-  
     znUDS_sync  <= {znUDS_sync[1:0],ZORRO_NUDS};
     znLDS_sync  <= {znLDS_sync[1:0],ZORRO_NLDS};
     znAS_sync   <= {znAS_sync[1:0],ZORRO_NCCS};
@@ -563,8 +566,11 @@ module MNTZorro_v0_1_S00_AXI
     
     znDS1_sync  <= {znDS1_sync[1:0],ZORRO_NDS1};
     znDS0_sync  <= {znDS0_sync[1:0],ZORRO_NDS0};
+    znFCS_sync  <= {znFCS_sync[1:0],ZORRO_NFCS};
+    znCFGIN_sync<= {znCFGIN_sync[1:0],ZORRO_NCFGIN};
     zDOE_sync   <= {zDOE_sync[0],ZORRO_DOE};
-    znFCS_sync <= {znFCS_sync[1:0],ZORRO_NFCS};
+    
+    znRST_sync  <= {znRST_sync[0],ZORRO_NIORST};
     
     // Z2 ------------------------------------------------
     z2_addr_valid <= (znAS_sync[2]==0 && znAS_sync[1]==0);
@@ -586,7 +592,7 @@ module MNTZorro_v0_1_S00_AXI
     zaddr_in_ram <= (z2_mapped_addr>=ram_low && z2_mapped_addr<ram_high);
     zaddr_in_reg <= 0; //(z2_mapped_addr>=reg_low && z2_mapped_addr<reg_high);
     
-    if (znAS_sync[1]==0 && zaddr_sync2>=`AUTOCONF_LOW && zaddr_sync2<`AUTOCONF_HIGH)
+    if (znAS_sync[1]==0 && z2_mapped_addr>=`AUTOCONF_LOW && z2_mapped_addr<`AUTOCONF_HIGH)
       zaddr_autoconfig <= 1'b1;
     else
       zaddr_autoconfig <= 1'b0;
@@ -643,6 +649,10 @@ module MNTZorro_v0_1_S00_AXI
     dataout_z3_latched <= dataout_z3;
     
     dtack_latched <= dtack;
+    
+    z_reset <= (znRST_sync==2'b00);
+    z_cfgin <= (znCFGIN_sync==3'b000);
+    z_cfgin_lo <= (znCFGIN_sync==3'b111);
   end // always @ (posedge S_AXI_ACLK)
 
   reg [15:0] REVISION = 'h7a09; // z9
@@ -701,7 +711,7 @@ module MNTZorro_v0_1_S00_AXI
   reg [23:0] last_read_addr = 0;
   reg [15:0] last_data = 0;
   reg [15:0] last_read_data = 0;
-  reg z_confout = 0;
+ 
   reg [15:0] zaddr_regpart = 0;
   reg [15:0] z3addr_regpart = 0;
   reg [15:0] regread_addr = 0;
@@ -714,6 +724,10 @@ module MNTZorro_v0_1_S00_AXI
   always @(posedge S_AXI_ACLK) begin
     zorro_idle <= ((zorro_state==Z2_IDLE)||(zorro_state==Z3_IDLE));
     
+    if (/*z_cfgin_lo ||*/ z_reset) begin
+      zorro_state <= RESET;
+    end
+  
     case (zorro_state)
       COLD: begin
         zorro_state <= RESET;
@@ -738,24 +752,29 @@ module MNTZorro_v0_1_S00_AXI
       
       DECIDE_Z2_Z3: begin
         ZORRO3 <= 0;
-        zorro_state <= CONFIGURED;
+        if (zaddr_autoconfig) begin
+          last_addr <= z2_mapped_addr;
+          zorro_state <= Z2_CONFIGURING;
+        end
       end
       
       Z2_CONFIGURING: begin
         z_ovr <= 0;
         if (zaddr_autoconfig && z_cfgin) begin
+          last_addr <= z2_mapped_addr;
+          
           if (z2_read) begin
             // read iospace 'he80000 (Autoconfig ROM)
             dataout_enable <= 1;
             dataout <= 1;
             slaven <= 1;
             
-            case (zaddr_sync2[7:0])
+            case (z2_mapped_addr[7:0])
               8'h00: data_out <= 'b1101_1111_1111_1111; // zorro 2 (11), no pool (0) rom (1)
               8'h02: data_out <= 'b0111_1111_1111_1111; // next board unrelated (0), 4mb (110 for 2mb)
               
               8'h04: data_out <= 'b1111_1111_1111_1111; // product number
-              8'h06: data_out <= 'b1110_1111_1111_1111; // (1)
+              8'h06: data_out <= 'b1101_1111_1111_1111; // (1)
               
               8'h08: data_out <= 'b0011_1111_1111_1111; // flags inverted 0011
               8'h0a: data_out <= 'b1110_1111_1111_1111; // inverted 0001 = OS sized
@@ -787,7 +806,7 @@ module MNTZorro_v0_1_S00_AXI
           end else begin
             // write to autoconfig register
             if (datastrobe_synced) begin
-              case (zaddr_sync2[7:0])
+              case (z2_mapped_addr[7:0])
                 8'h48: begin
                   ram_low[31:24] <= 8'h0;
                   ram_low[23:20] <= zdata_in_sync[15:12];
@@ -823,7 +842,7 @@ module MNTZorro_v0_1_S00_AXI
       
       CONFIGURED: begin
         //ram_low <= ram_low + 'h10000;
-        //ram_high <= ram_low + `RAM_SIZE;
+        ram_high <= ram_low + `RAM_SIZE;
         //reg_low <= ram_low;
         //reg_high <= ram_low + `REG_SIZE;
         
@@ -1007,7 +1026,7 @@ module MNTZorro_v0_1_S00_AXI
     out_reg0 <= last_addr;
     out_reg1 <= {16'h0000, zorro_write_capture_data};
     out_reg2 <= 0; // {ZORRO_NIORST,ZORRO_NFCS,ZORRO_NCCS,ZORRO_READ,ZORRO_DOE,ZORRO_NUDS,ZORRO_NLDS,ZORRO_NDS1,ZORRO_NDS0};
-    out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_write_capture_bytes, 4'b0, 8'b0, 8'b0, zorro_state};
+    out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_write_capture_bytes, z_cfgin, zaddr_autoconfig, 2'b0, 8'b0, 8'b0, zorro_state};
   end
 
 
@@ -1021,7 +1040,7 @@ module MNTZorro_v0_1_S00_AXI
 	    case ( axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] )
 	      2'h0   : reg_data_out <= out_reg0;
 	      2'h1   : reg_data_out <= out_reg1;
-          2'h3   : reg_data_out <= out_reg3;
+        2'h3   : reg_data_out <= out_reg3;
 	      default : reg_data_out <= 'hdeadcafe;
 	    endcase
 	  end

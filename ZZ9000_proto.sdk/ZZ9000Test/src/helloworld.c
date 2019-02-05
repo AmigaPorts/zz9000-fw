@@ -429,19 +429,19 @@ void video_system_init(int vmode, int hres, int vres, int mhz, int vhz) {
 int main()
 {
 	char* zstates[42] = {
-		"RESET",
-		"Z2_CONF",
-		"Z2_IDLE",
+		"RESET   ",
+		"Z2_CONF ",
+		"Z2_IDLE ",
 		"WAIT_WRI",
-		"WAIT_WRI2",
+		"WAIT_WR2",
 		"Z2WRIFIN",
-		"WAIT_RD",
+		"WAIT_RD ",
 		"WAIT_RD2",
 		"WAIT_RD3",
-		"CONFIGURED",
-		"CONF_CLEAR",
-		"D_Z2_Z3",
-		"Z3_IDLE",
+		"CONFIGED",
+		"CONF_CLR",
+		"D_Z2_Z3 ",
+		"Z3_IDLE ",
 		"Z3_WRITE_UPP",
 		"Z3_WRITE_LOW",
 		"Z3_READ_UP",
@@ -516,6 +516,8 @@ int main()
 #define MNT_BASE_MODE   0x600000
 #define MNT_BASE_RECTOP 0x600010
 
+	uint32_t old_zstate = 0;
+
     while(1) {
         uint32_t zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
 
@@ -524,11 +526,14 @@ int main()
         u32 upper_byte = (zstate&(1<<29));
         u32 lower_byte = (zstate&(1<<28));
 
+        u32 zncfgin    = (zstate&(1<<27));
+        u32 autoconf   = (zstate&(1<<26));
+
         zstate = zstate&0xf;
         if (zstate>40) zstate=41;
 
-        //if (zstate!=old_zstate) {
-        	/*printf("addr: %08lx data: %04lx %s %s %s %s strb: %lx%lx%lx%lx %ld %s\r\n",zaddr,zdata,
+        /*if (zstate!=old_zstate) {
+        	printf("addr: %08lx data: %04lx %s %s %s %s strb: %lx%lx%lx%lx %ld %s\r\n",zaddr,zdata,
     			(zbits&(1<<8))?"   ":"RST",
     			(zbits&(1<<5))?"RD":"  ",
 				(zbits&(1<<6))?"   ":"CCS",
@@ -541,7 +546,12 @@ int main()
 				zstate_orig,
 				zstates[zstate]);*/
 
-        //printf("ZSTA: %s write: %d read: %d data: %lx\n", zstates[zstate],!!writereq,!!readreq,zdata);
+		//if (zstate!=old_zstate) {
+		//	uint32_t zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
+		//	printf("ZSTA: %s wr: %d rd: %d cfgi: %d ac: %d addr: %08lx\n", zstates[zstate],!!writereq,!!readreq,!!zncfgin,!!autoconf,zaddr);
+		//}
+
+		old_zstate = zstate;
 
 		if (!need_req_ack && writereq) {
 			uint32_t zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
