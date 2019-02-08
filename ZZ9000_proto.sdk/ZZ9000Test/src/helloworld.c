@@ -135,10 +135,15 @@ void mandel(int k){
 
 XAxiVdma vdma;
 static u32* framebuffer=0;
+static u32  framebuffer_pan_offset=0;
+static u32  blitter_dst_offset=0;
+static u32  blitter_src_offset=0;
+static u32  vmode_hsize=800, vmode_vsize=600;
 
 int init_vdma(int hsize, int vsize) {
 	int status;
 	XAxiVdma_Config *Config;
+
 	Config = XAxiVdma_LookupConfig(VDMA_DEVICE_ID);
 
 	if (!Config) {
@@ -164,7 +169,7 @@ int init_vdma(int hsize, int vsize) {
 	ReadCfg.EnableFrameCounter  = 0;      /* Endless transfers */
 	ReadCfg.FixedFrameStoreAddr = 0;      /* We are not doing parking */
 
-	ReadCfg.FrameStoreStartAddr[0] = (u32)framebuffer;
+	ReadCfg.FrameStoreStartAddr[0] = (u32)framebuffer+framebuffer_pan_offset;
 
 	status = XAxiVdma_DmaConfig(&vdma, XAXIVDMA_READ, &ReadCfg);
 	if (status != XST_SUCCESS) {
@@ -377,6 +382,22 @@ void pixelclock_init(int mhz) {
 		mul = 11;
 		div = 1;
 		otherdiv = 11;
+	} else if (mhz==27) {
+		mul = 18;
+		div = 1;
+		otherdiv = 50;
+	} else if (mhz==150) {
+		mul = 12;
+		div = 1;
+		otherdiv = 6;
+	} else if (mhz==25) { // 25.205
+		mul = 41;
+		div = 2;
+		otherdiv = 61;
+	} else if (mhz==108) {
+		mul = 23;
+		div = 2;
+		otherdiv = 8;
 	}
 
 	XClk_Wiz_WriteReg(XPAR_CLK_WIZ_0_BASEADDR, 0x200, (mul<<8) | div);
@@ -424,6 +445,9 @@ void video_system_init(int vmode, int hres, int vres, int mhz, int vhz) {
 
     dump_vdma_status(&vdma);
     dump_vtc_status();
+
+    vmode_hsize = hres;
+    vmode_vsize = vres;
 }
 
 int main()
@@ -476,6 +500,7 @@ int main()
     init_platform();
 
     framebuffer=(u32*)0x110000;
+    framebuffer_pan_offset=0;
 
     //mandel(0);
 
@@ -491,7 +516,8 @@ int main()
     fb_fill();
 
     //video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60);
-    video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
+    //video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
+    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60);
 
     int need_req_ack = 0;
 
@@ -503,34 +529,40 @@ int main()
     uint16_t rect_y1=0;
     uint16_t rect_y2=0;
     uint16_t rect_y3=10;
-    uint16_t rect_pitch=800;
-    uint16_t rect_rgb=0;
+    uint16_t rect_pitch=640;
+    uint32_t rect_rgb=0;
 
 	u8* mem = (u8*)framebuffer;
 
 	// FIXME!
 #define MNTZ_BASE_ADDR 0x43C00000
 
-#define MNT_REG_BASE    0x600000
-#define MNT_FB_BASE     0x610000
-#define MNT_BASE_MODE   0x600000
-#define MNT_BASE_RECTOP 0x600010
-
-	uint32_t old_zstate = 0;
+	// Our address space is relative to the autoconfig base address (for example, it could be 0x600000)
+#define MNT_REG_BASE    0x000000
+#define MNT_FB_BASE     0x010000
+#define MNT_BASE_MODE   MNT_REG_BASE+0x02
+#define MNT_BASE_RECTOP MNT_REG_BASE+0x10
+#define MNT_BASE_PAN_HI MNT_REG_BASE+0x0a
+#define MNT_BASE_PAN_LO MNT_REG_BASE+0x0c
+#define MNT_BASE_BLIT_SRC_HI MNT_REG_BASE+0x28
+#define MNT_BASE_BLIT_SRC_LO MNT_REG_BASE+0x2a
+#define MNT_BASE_BLIT_DST_HI MNT_REG_BASE+0x2c
+#define MNT_BASE_BLIT_DST_LO MNT_REG_BASE+0x2e
+#define MNT_BASE_VIDEOCAP_MODE MNT_REG_BASE+0x30
 
     while(1) {
-        uint32_t zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
+		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
+		u32 zdebug = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
 
         u32 writereq   = (zstate&(1<<31));
         u32 readreq    = (zstate&(1<<30));
         u32 upper_byte = (zstate&(1<<29));
         u32 lower_byte = (zstate&(1<<28));
 
-        u32 zncfgin    = (zstate&(1<<27));
-        u32 autoconf   = (zstate&(1<<26));
-
         zstate = zstate&0xf;
         if (zstate>40) zstate=41;
+
+        printf("%08lx\n",zdebug);
 
         /*if (zstate!=old_zstate) {
         	printf("addr: %08lx data: %04lx %s %s %s %s strb: %lx%lx%lx%lx %ld %s\r\n",zaddr,zdata,
@@ -551,19 +583,28 @@ int main()
 		//	printf("ZSTA: %s wr: %d rd: %d cfgi: %d ac: %d addr: %08lx\n", zstates[zstate],!!writereq,!!readreq,!!zncfgin,!!autoconf,zaddr);
 		//}
 
-		old_zstate = zstate;
-
 		if (!need_req_ack && writereq) {
-			uint32_t zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
-			uint32_t zdata = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET);
+			u32 zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
+			u32 zdata  = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET);
 			//uint32_t count_writes = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
 			//printf("WRTE %08lx <- %08lx [%d%d]\n",zaddr,zdata,upper_byte,lower_byte);
 
 			if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
 				// register area
 
+				// PANNING
+				if (zaddr==MNT_BASE_PAN_HI) framebuffer_pan_offset=zdata<<16;
+				else if (zaddr==MNT_BASE_PAN_LO) {
+					framebuffer_pan_offset|=zdata;
+					init_vdma(vmode_hsize,vmode_vsize);
+				}
+				else if (zaddr==MNT_BASE_BLIT_SRC_HI) blitter_src_offset=zdata<<16;
+				else if (zaddr==MNT_BASE_BLIT_SRC_LO) blitter_src_offset|=zdata;
+				else if (zaddr==MNT_BASE_BLIT_DST_HI) blitter_dst_offset=zdata<<16;
+				else if (zaddr==MNT_BASE_BLIT_DST_LO) blitter_dst_offset|=zdata;
+
 				// RECTOP
-				if (zaddr==MNT_BASE_RECTOP) 	   rect_x1=zdata;
+				else if (zaddr==MNT_BASE_RECTOP)   rect_x1=zdata;
 				else if (zaddr==MNT_BASE_RECTOP+2) rect_y1=zdata;
 				else if (zaddr==MNT_BASE_RECTOP+4) rect_x2=zdata;
 				else if (zaddr==MNT_BASE_RECTOP+6) rect_y2=zdata;
@@ -571,25 +612,30 @@ int main()
 
 				else if (zaddr==MNT_BASE_RECTOP+0xa) rect_x3=zdata;
 				else if (zaddr==MNT_BASE_RECTOP+0xc) rect_y3=zdata;
-				else if (zaddr==MNT_BASE_RECTOP+0xe) rect_rgb=zdata;
+				else if (zaddr==MNT_BASE_RECTOP+0xe) {
+					rect_rgb&=0xffff0000;
+					rect_rgb|=(((zdata&0xff)<<8)|zdata>>8);
+				}
 				else if (zaddr==MNT_BASE_RECTOP+0x10) {
-					rect_rgb=(rect_rgb<<16)|zdata;
+					rect_rgb&=0x0000ffff;
+					rect_rgb|=(((zdata&0xff)<<8)|zdata>>8)<<16;
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x12) {
 					// fill rectangle
-					set_fb((uint32_t*)framebuffer, rect_pitch);
+
+					//printf("rectfill: %d %d %d %d %08lx\n",rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
+
+					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
 					fill_rect(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
 					//Xil_DCacheFlush();
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x14) {
 					// copy rectangle
-
-					// fill rectangle
 					uint16_t ys=rect_y3;
 					for (uint16_t y=rect_y1; y<=rect_y2; y++) {
 						uint16_t xs=rect_x3;
 						for (uint16_t x=rect_x1; x<=rect_x2; x++) {
-							((u32*)framebuffer)[y*rect_pitch+x]=((u32*)framebuffer)[ys*rect_pitch+xs];
+							((u32*)((u32)framebuffer+blitter_dst_offset))[y*rect_pitch+x]=((u32*)((u32)framebuffer+blitter_src_offset))[ys*rect_pitch+xs];
 							xs++;
 						}
 						ys++;
@@ -601,24 +647,39 @@ int main()
 					Vec2 a = {rect_x1, rect_y1};
 					Vec2 b = {rect_x2, rect_y2};
 					Vec2 c = {rect_x3, rect_y3};
-					set_fb((uint32_t*)framebuffer, rect_pitch);
+					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
 					fill_triangle(a,b,c,rect_rgb);
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x20) {
 					// demo
-					set_fb((uint32_t*)framebuffer, rect_pitch);
+					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
 					render_faces(zdata);
 				}
 
 				else if (zaddr==MNT_BASE_MODE) {
 					printf("mode change: %d\n",zdata);
+					// https://github.com/Xilinx/embeddedsw/blob/master/XilinxProcessorIPLib/drivers/vtc/src/xvtc.c
+
 					if (zdata==0) {
 					    video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60);
 					} else if (zdata==1) {
 					    video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
+					} else if (zdata==2) {
+					    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60);
+					} else if (zdata==3) {
+					    video_system_init(XVTC_VMODE_PAL, 720, 288, 27, 50);
+					} else if (zdata==4) {
+					    video_system_init(XVTC_VMODE_PAL, 720, 576, 27, 50);
+					} else if (zdata==5) {
+					    video_system_init(XVTC_VMODE_1080P, 1920, 1080, 150, 60);
+					} else if (zdata==6) {
+					    video_system_init(XVTC_VMODE_SXGA, 1280, 1024, 108, 60);
 					} else {
 						printf("error: unknown mode\n");
 					}
+				}
+				else if (zaddr==MNT_BASE_VIDEOCAP_MODE) {
+					//videocap_mode=zdata;
 				}
 			}
 			else if (zaddr>=MNT_FB_BASE) {
