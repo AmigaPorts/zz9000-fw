@@ -1,4 +1,3 @@
-
 `timescale 1 ns / 1 ps
 
 `define C_S_AXI_DATA_WIDTH 32
@@ -9,16 +8,16 @@
 `define AUTOCONF_HIGH 24'he80080
 `define Z3_RAM_SIZE 32'h02000000
 
-parameter  C_M00_AXI_TARGET_SLAVE_BASE_ADDR	= 32'h10000000;
-parameter integer C_M00_AXI_BURST_LEN	= 16;
-parameter integer C_M00_AXI_ID_WIDTH	= 1;
-parameter integer C_M00_AXI_ADDR_WIDTH	= 32;
-parameter integer C_M00_AXI_DATA_WIDTH	= 32;
-parameter integer C_M00_AXI_AWUSER_WIDTH    = 0;
-parameter integer C_M00_AXI_ARUSER_WIDTH	= 0;
-parameter integer C_M00_AXI_WUSER_WIDTH	= 0;
-parameter integer C_M00_AXI_RUSER_WIDTH	= 0;
-parameter integer C_M00_AXI_BUSER_WIDTH	= 0;
+`define C_M00_AXI_TARGET_SLAVE_BASE_ADDR 32'h10000000
+`define C_M00_AXI_BURST_LEN	 16
+`define C_M00_AXI_ID_WIDTH   1
+`define C_M00_AXI_ADDR_WIDTH 32
+`define C_M00_AXI_DATA_WIDTH 32
+`define C_M00_AXI_AWUSER_WIDTH 0
+`define C_M00_AXI_ARUSER_WIDTH 0
+`define C_M00_AXI_WUSER_WIDTH	0
+`define C_M00_AXI_RUSER_WIDTH	0
+`define C_M00_AXI_BUSER_WIDTH	0
 
 module MNTZorro_v0_1_S00_AXI
 (
@@ -73,7 +72,7 @@ module MNTZorro_v0_1_S00_AXI
   // write address channel
   input wire m00_axi_awready,
   //output reg [C_M00_AXI_ID_WIDTH-1 : 0] m00_axi_awid,
-  output reg [C_M00_AXI_ADDR_WIDTH-1 : 0] m00_axi_awaddr,
+  output reg [`C_M00_AXI_ADDR_WIDTH-1 : 0] m00_axi_awaddr,
   output reg [7:0] m00_axi_awlen,
   output reg [2:0] m00_axi_awsize,
   output reg [1:0] m00_axi_awburst,
@@ -86,8 +85,8 @@ module MNTZorro_v0_1_S00_AXI
   // write channel
   input wire m00_axi_wready,
   //output reg [C_M00_AXI_ID_WIDTH-1 : 0] m00_axi_wid,
-  output reg [C_M00_AXI_DATA_WIDTH-1 : 0] m00_axi_wdata,
-  output reg [C_M00_AXI_DATA_WIDTH/8-1 : 0] m00_axi_wstrb,
+  output reg [`C_M00_AXI_DATA_WIDTH-1 : 0] m00_axi_wdata,
+  output reg [`C_M00_AXI_DATA_WIDTH/8-1 : 0] m00_axi_wstrb,
   output reg m00_axi_wlast,
   output reg m00_axi_wvalid,
   
