@@ -51,9 +51,7 @@ module video_tester(
     wire [7:0] green2;
     wire [7:0] blue2;
      
-    assign s_axis_vid_tlast = m_axis_vid_tlast;
     assign m_axis_vid_tready = count;
-    assign s_axis_vid_tvalid = m_axis_vid_tvalid;
     assign s_axis_vid_tdata = pixout;
   
     assign red1 = {m_axis_vid_tdata[4:0],m_axis_vid_tdata[4:2]};
@@ -70,6 +68,7 @@ module video_tester(
       if ((start_of_frame || valid) && s_axis_vid_tready)
         begin
           valid <= 1; 
+          eol <= m_axis_vid_tlast;
           case(count)    
             1: begin
               count <= 0;
@@ -85,6 +84,7 @@ module video_tester(
         begin
           valid <= 0;
           ready <= 1;
+          start_of_frame = 0;
          end
       else if (m_axis_vid_tuser == 1 && s_axis_vid_tready)
         start_of_frame = 1;
