@@ -37,6 +37,10 @@ module video_tester(
     );
     
     reg count = 1;
+    reg valid = 0;
+    reg ready = 1;
+    reg start_of_frame = 0;
+    reg eol = 0;
     reg [31:0] pixout;
 
     wire [7:0] red1;
@@ -46,11 +50,9 @@ module video_tester(
     wire [7:0] red2;
     wire [7:0] green2;
     wire [7:0] blue2;
-    
-    
+     
     assign s_axis_vid_tlast = m_axis_vid_tlast;
     assign m_axis_vid_tready = count;
-    assign s_axis_vid_tuser = m_axis_vid_tuser;
     assign s_axis_vid_tvalid = m_axis_vid_tvalid;
     assign s_axis_vid_tdata = pixout;
   
@@ -61,19 +63,30 @@ module video_tester(
     assign red2 = {m_axis_vid_tdata[20:16],m_axis_vid_tdata[20:18]};
     assign green2 = {m_axis_vid_tdata[26:21],m_axis_vid_tdata[26:25]};
     assign blue2 = {m_axis_vid_tdata[31:27],m_axis_vid_tdata[31:29] };
-  
-    // MISSING: Ready and valid signals.
-    always @(posedge m_axis_vid_aclk)
-      begin        
-        if (count==1)
-          begin
-            count <= 0;
-            pixout  <= {red1,green1,blue1,8'b0} ;
-           end
-        else
-          begin
-            count <= count+1;
-            pixout  <= {red2,green2,blue2,8'b0} ;
-          end
-      end
+    
+    assign s_axis_vid_tvalid = valid;
+    
+  always @(posedge m_axis_vid_aclk)   
+      if ((start_of_frame || valid) && s_axis_vid_tready)
+        begin
+          valid <= 1; 
+          case(count)    
+            1: begin
+              count <= 0;
+              pixout  <= {red1,green1,blue1,8'b0};
+             end
+            0: begin
+              count <= count+1;
+              pixout  <= {red2,green2,blue2,8'b0};
+            end
+          endcase
+         end
+      else if (eol)
+        begin
+          valid <= 0;
+          ready <= 1;
+         end
+      else if (m_axis_vid_tuser == 1 && s_axis_vid_tready)
+        start_of_frame = 1;
 endmodule
+
