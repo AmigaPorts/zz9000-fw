@@ -63,19 +63,20 @@ module video_tester(
     assign blue2 = {m_axis_vid_tdata[31:27],m_axis_vid_tdata[31:29] };
     
     assign s_axis_vid_tvalid = valid;
+    assign s_axis_vid_tuser = start_of_frame;
     
-  always @(posedge m_axis_vid_aclk)   
+    always @(posedge m_axis_vid_aclk) 
       if ((start_of_frame || valid) && s_axis_vid_tready)
         begin
-          valid <= 1; 
           eol <= m_axis_vid_tlast;
+          valid <= 1;
           case(count)    
             1: begin
               count <= 0;
               pixout  <= {red1,green1,blue1,8'b0};
              end
             0: begin
-              count <= count+1;
+              count <= 1;
               pixout  <= {red2,green2,blue2,8'b0};
             end
           endcase
@@ -84,9 +85,8 @@ module video_tester(
         begin
           valid <= 0;
           ready <= 1;
-          start_of_frame = 0;
+          start_of_frame <= 0;
          end
       else if (m_axis_vid_tuser == 1 && s_axis_vid_tready)
-        start_of_frame = 1;
+        start_of_frame <= 1;
 endmodule
-
