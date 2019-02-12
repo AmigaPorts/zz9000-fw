@@ -51,9 +51,10 @@ module video_tester(
     wire [7:0] green2;
     wire [7:0] blue2;
      
-    assign m_axis_vid_tready = count;
+    //assign m_axis_vid_tready = count;
     assign s_axis_vid_tdata = pixout;
-  
+    assign m_axis_vid_tready = s_axis_vid_tready;
+    
     assign red1 = {m_axis_vid_tdata[4:0],m_axis_vid_tdata[4:2]};
     assign green1 = {m_axis_vid_tdata[10:5], m_axis_vid_tdata[10:9]};
     assign blue1 = {m_axis_vid_tdata[15:11],m_axis_vid_tdata[15:13]};
@@ -62,31 +63,34 @@ module video_tester(
     assign green2 = {m_axis_vid_tdata[26:21],m_axis_vid_tdata[26:25]};
     assign blue2 = {m_axis_vid_tdata[31:27],m_axis_vid_tdata[31:29] };
     
-    assign s_axis_vid_tvalid = valid;
-    assign s_axis_vid_tuser = start_of_frame;
+    //assign s_axis_vid_tvalid = valid;
+    //assign s_axis_vid_tuser = start_of_frame;
+    assign s_axis_vid_tvalid = m_axis_vid_tvalid;
+    assign s_axis_vid_tuser = m_axis_vid_tuser;
+    assign s_axis_vid_tlast = m_axis_vid_tlast;
     
     always @(posedge m_axis_vid_aclk) 
-      if ((start_of_frame || valid) && s_axis_vid_tready)
+      //if ((start_of_frame || valid) && s_axis_vid_tready)
         begin
           eol <= m_axis_vid_tlast;
           valid <= 1;
           case(count)    
             1: begin
               count <= 0;
-              pixout  <= {red1,green1,blue1,8'b0};
+              pixout  <= {8'b0,red1,green1,blue1};
              end
             0: begin
               count <= 1;
-              pixout  <= {red2,green2,blue2,8'b0};
+              pixout  <= {8'b0,red2,green2,blue2};
             end
           endcase
          end
-      else if (eol)
+      /*else if (eol)
         begin
           valid <= 0;
           ready <= 1;
           start_of_frame <= 0;
          end
       else if (m_axis_vid_tuser == 1 && s_axis_vid_tready)
-        start_of_frame <= 1;
+        start_of_frame <= 1;*/
 endmodule
