@@ -36,55 +36,58 @@ module video_tester(
     input s_axis_vid_aclk		
     );
     
-    reg count = 1;
-    reg valid = 0;
-    reg ready = 1;
-    reg start_of_frame = 0;
-    reg eol = 0;
-    reg [31:0] pixout;
+  reg count = 1;
+  //reg valid = 0;
+  //reg ready = 1;
+  //reg start_of_frame = 0;
+  //reg eol = 0;
+  reg [31:0] pixout;
 
-    wire [7:0] red1;
-    wire [7:0] green1;
-    wire [7:0] blue1;
+  wire [7:0] red1;
+  wire [7:0] green1;
+  wire [7:0] blue1;
     
-    wire [7:0] red2;
-    wire [7:0] green2;
-    wire [7:0] blue2;
+  wire [7:0] red2;
+  wire [7:0] green2;
+  wire [7:0] blue2;
      
-    //assign m_axis_vid_tready = count;
-    assign s_axis_vid_tdata = pixout;
-    assign m_axis_vid_tready = s_axis_vid_tready;
+  //assign m_axis_vid_tready = count;
+  assign s_axis_vid_tdata = pixout;
+  assign m_axis_vid_tready = s_axis_vid_tready;
     
-    assign red1 = {m_axis_vid_tdata[4:0],m_axis_vid_tdata[4:2]};
-    assign green1 = {m_axis_vid_tdata[10:5], m_axis_vid_tdata[10:9]};
-    assign blue1 = {m_axis_vid_tdata[15:11],m_axis_vid_tdata[15:13]};
+  assign red1 = {m_axis_vid_tdata[4:0],m_axis_vid_tdata[4:2]};
+  assign green1 = {m_axis_vid_tdata[10:5], m_axis_vid_tdata[10:9]};
+  assign blue1 = {m_axis_vid_tdata[15:11],m_axis_vid_tdata[15:13]};
     
-    assign red2 = {m_axis_vid_tdata[20:16],m_axis_vid_tdata[20:18]};
-    assign green2 = {m_axis_vid_tdata[26:21],m_axis_vid_tdata[26:25]};
-    assign blue2 = {m_axis_vid_tdata[31:27],m_axis_vid_tdata[31:29] };
+  assign red2 = {m_axis_vid_tdata[20:16],m_axis_vid_tdata[20:18]};
+  assign green2 = {m_axis_vid_tdata[26:21],m_axis_vid_tdata[26:25]};
+  assign blue2 = {m_axis_vid_tdata[31:27],m_axis_vid_tdata[31:29] };
     
-    //assign s_axis_vid_tvalid = valid;
-    //assign s_axis_vid_tuser = start_of_frame;
-    assign s_axis_vid_tvalid = m_axis_vid_tvalid;
-    assign s_axis_vid_tuser = m_axis_vid_tuser;
-    assign s_axis_vid_tlast = m_axis_vid_tlast;
+  //assign s_axis_vid_tvalid = valid;
+  //assign s_axis_vid_tuser = start_of_frame;
+  assign s_axis_vid_tvalid = m_axis_vid_tvalid;
+  assign s_axis_vid_tuser = m_axis_vid_tuser;
+  assign s_axis_vid_tlast = m_axis_vid_tlast;
     
-    always @(posedge m_axis_vid_aclk) 
+  always @(posedge m_axis_vid_aclk)
       //if ((start_of_frame || valid) && s_axis_vid_tready)
-        begin
-          eol <= m_axis_vid_tlast;
-          valid <= 1;
-          case(count)    
-            1: begin
-              count <= 0;
-              pixout  <= {8'b0,red1,green1,blue1};
-             end
-            0: begin
-              count <= 1;
-              pixout  <= {8'b0,red2,green2,blue2};
-            end
-          endcase
-         end
+    if (m_axis_vid_tuser)
+      count <= 0
+
+      begin
+          //eol <= m_axis_vid_tlast;
+          //valid <= 1;
+        case(count)
+          0: begin
+            count <= 1;
+            pixout  <= {8'b0,red1,green1,blue1};
+          end
+          1: begin
+            count <= 0;
+            pixout  <= {8'b0,red2,green2,blue2};
+          end
+        endcase
+      end
       /*else if (eol)
         begin
           valid <= 0;
