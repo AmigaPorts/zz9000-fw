@@ -164,7 +164,7 @@ set imported_files [import_files -fileset sources_1 $files]
 # None
 
 # Set 'sources_1' fileset file properties for local files
-set file "ZZ9000_proto/mntzorro.v"
+set file ${origin_dir}/mntzorro.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "path_mode" -value "RelativeOnly" -objects $file_obj
 
