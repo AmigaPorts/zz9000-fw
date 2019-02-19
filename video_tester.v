@@ -78,8 +78,8 @@ assign blue2 = {pixout1[31:27], pixout1[31:29]};
 
 reg [31:0] pixin1;
 
-localparam WIDTH=352;
-localparam HEIGHT=288;
+localparam WIDTH=640;
+localparam HEIGHT=480;
 
 assign s_axis_vid_tvalid = valid;
 assign s_axis_vid_tuser  = start_of_frame;
@@ -174,7 +174,6 @@ begin
     end_of_line <= 0;
   end
   else begin
-          
     if (ready) begin
       valid <= 1;
       if (cur_x >= WIDTH-1) begin
@@ -200,8 +199,7 @@ begin
         else
           start_of_frame <= 0;
       end
-    end //else
-      //valid <= 0;
+    end
   end
 end
   
