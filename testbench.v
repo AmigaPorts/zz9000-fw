@@ -12,6 +12,9 @@ module testbench;
   wire s_axis_vid_tuser;
   wire s_axis_vid_tvalid;
   reg s_axis_vid_aclk;
+
+  reg [15:0] col_count = 0;
+  reg [15:0] last_col_count = 0;
   
   video_tester vt(
                   .m_axis_vid_aclk(aclk),
@@ -27,14 +30,43 @@ module testbench;
       $dumpfile("testbench.vcd");
       $dumpvars(0,vt);
       
-      ready = 1;
+      ready = 0;
       aresetn = 1;
       //$display("testbench_state: %h %t",testbench_state,$time);
 
-      #6000000 $finish;
+      #1010 ready = 0;
+      #1000 ready = 1;
+      #1000000 ready = 0;
+      #1000000 ready = 1;
+      #100 ready = 0;
+      #20 ready = 1;
+      #20 ready = 0;
+      #20 ready = 1;
+      #20 ready = 0;
+      #20 ready = 1;
+      #20 ready = 0;
+      #20 ready = 1;
+      
+      #100000000 $finish;
     end
 
   always
-    #5 aclk = !aclk;
+    begin
+      #10 aclk = !aclk;
+      if (aclk) begin
+        if (s_axis_vid_tvalid && ready) begin
+          col_count = col_count + 1;
+          if (s_axis_vid_tlast) begin
+            if (last_col_count != col_count)
+              $display($time,"last line width: %d vs %d",last_col_count,col_count);
+            last_col_count = col_count;
+            col_count = 0;
+          end
+          //if (s_axis_vid_tuser) begin
+          //  $display("--------------------------------------------------------------");
+          //end
+        end
+      end
+    end
   
 endmodule
