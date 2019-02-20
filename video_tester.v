@@ -38,123 +38,86 @@ module video_tester(
   output [15:0] dbg_x,
   output [15:0] dbg_y,
   output [2:0] dbg_state,
-  output [15:0] dbg_pixcount
+  output reg [15:0] dbg_pixcount
 );
-
-reg count = 1;
-//reg valid = 0;
-//reg ready = 1;
-//reg start_of_frame = 0;
-//reg eol = 0;
-reg [31:0] pixbuf1[(2*640-1):0];
-
-reg [31:0] pixout;
-reg [31:0] pixout1;
-reg [31:0] pixout2;
-reg [9:0] inptr=0;
-reg [9:0] outptr=0;
-
-wire [7:0] red1;
-wire [7:0] green1;
-wire [7:0] blue1;
-  
-wire [7:0] red2;
-wire [7:0] green2;
-wire [7:0] blue2;
-
-reg valid = 0;
-reg end_of_line = 0;
-
-assign s_axis_vid_tdata = pixout;
-assign m_axis_vid_tready = 0; //s_axis_vid_tready;
-
-assign red1 = {pixout1[4:0], pixout1[4:2]};
-assign green1 = {pixout1[10:5], pixout1[10:9]};
-assign blue1 = {pixout1[15:11], pixout1[15:13]};
-
-assign red2 = {pixout1[20:16], pixout1[20:18]};
-assign green2 = {pixout1[26:21], pixout1[26:25]};
-assign blue2 = {pixout1[31:27], pixout1[31:29]};
-
-reg [31:0] pixin1;
 
 localparam WIDTH=640;
 localparam HEIGHT=480;
+reg [31:0] line_buffer[(2*WIDTH-1):0];
+
+// (input) vdma state
+reg [2:0] input_state = 0;
+reg [9:0] inptr = 0;
+reg ready_for_vdma = 0;
+
+// (output) stream-to-video out state
+reg [2:0] state = 0;
+reg start_of_frame = 0;
+reg ready;
+reg valid = 0;
+reg end_of_line = 0;
+reg [15:0] cur_x = 0;
+reg [15:0] cur_y = 0;
+reg [31:0] pixout;
+
+reg [15:0] pixout16;
+wire red16   = {pixout16[4:0],   pixout16[4:2]};
+wire green16 = {pixout16[10:5],  pixout16[10:9]};
+wire blue16  = {pixout16[15:11], pixout16[15:13]};
 
 assign s_axis_vid_tvalid = valid;
 assign s_axis_vid_tuser  = start_of_frame;
 assign s_axis_vid_tlast  = end_of_line;
+assign s_axis_vid_tdata  = pixout;
+assign m_axis_vid_tready = ready_for_vdma;
 
-reg prev_tlast = 0;
-reg [2:0] state = 0;
-reg tlast_count = 0;
-reg start_of_frame = 0;
-
-/*always @(posedge m_axis_vid_aclk)
+always @(posedge m_axis_vid_aclk)
   begin
-    valid <= s_axis_vid_tready;
-    
-    prev_tlast <= m_axis_vid_tlast;
-    
-    // line end
-    if (m_axis_vid_tlast==1 && prev_tlast==0 && state==0) begin
-      tlast_count <= tlast_count+1;
-      
-      count <= 0;
+    if (~aresetn) begin
+      ready_for_vdma <= 0;
+      input_state <= 0;
       inptr <= 0;
-      outptr <= 0;
-      state <= 1;
     end
+    else if (input_state == 0) begin
+      // reading from vdma
+      ready_for_vdma <= 1;
     
-    if (state==1) begin
-      if (m_axis_vid_tvalid)
-        state <= 2;
-    end
-    
-    if (state==2) begin
-      count <= ~count;
-      pixbuf1[inptr] <= pixin1;
-      if (inptr<640) begin
-        inptr<=inptr+1;
+      if (m_axis_vid_tvalid) begin
+        line_buffer[inptr] <= m_axis_vid_tdata;
+        if (inptr<WIDTH) begin
+          inptr <= inptr + 1'b1;
+        end else begin
+          // done reading a line
+          inptr <= 0;
+          input_state <= 1;
+        end
       end
-        
-      if (count)
-        pixout <= {8'b0,blue1,green1,red1};
-      else
-        pixout <= {8'b0,blue2,green2,red2};
+    end else if (input_state == 1) begin
+      // read more than enough
+      ready_for_vdma <= 0;
       
-      if (count) begin
-        if (outptr<640) outptr<=outptr+1;
-        else state <= 0;
+      // output line almost finished, time to read the next line
+      if (cur_x == WIDTH-32) begin
+        input_state <= 0;
       end
     end
-    
-    pixin1 <= m_axis_vid_tdata;
-    pixout1 <= {pixbuf1[outptr][23:16],pixbuf1[outptr][31:24],pixbuf1[outptr][7:0],pixbuf1[outptr][15:8]};
-    
-    // buffer a word
-    // tvalid is somehow too laggy, can't wait for it
-    
-  end*/
-  
-// custom stream generator experiment
-
-reg [15:0] cur_x = 0;
-reg [15:0] cur_y = 0;
-reg [3:0] blank_counter = 0;
+  end
 
 assign dbg_state = state;
 assign dbg_x = cur_x;
 assign dbg_y = cur_y;
 
-reg [15:0] dbg_pixcount = 0;
-reg ready;
-
-assign valid_txn = valid && s_axis_vid_tready;
-
 always @(posedge m_axis_vid_aclk)
 begin
-  pixout <= {cur_y,cur_x};
+
+  if (cur_x[0]==1'b0)
+    pixout16 <= {line_buffer[cur_x[9:1]][23:16],line_buffer[cur_x[9:1]][31:24]};
+  else
+    pixout16 <= {line_buffer[cur_x[9:1]][15:8],  line_buffer[cur_x[9:1]][7:0]};
+  
+  pixout <= {8'b0,blue16,green16,red16};
+  
+  //pixout <= {cur_y,cur_x};
   ready <= s_axis_vid_tready;
   
   if (valid && ready) begin
@@ -174,8 +137,11 @@ begin
     end_of_line <= 0;
   end
   else begin
+    
+    // video out control
     if (ready) begin
       valid <= 1;
+      
       if (cur_x >= WIDTH-1) begin
         // end of line
         cur_x <= 0;
