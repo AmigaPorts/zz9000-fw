@@ -781,6 +781,8 @@ module MNTZorro_v0_1_S00_AXI
   localparam Z2_PRE_CONFIGURED = 34;
   localparam Z2_ENDCYCLE = 35;
   
+  localparam WAIT_WRITE_DMA_Z2 = 36;
+  
   localparam RESET_DVID = 39;
   localparam COLD = 40;
   
@@ -895,7 +897,7 @@ module MNTZorro_v0_1_S00_AXI
   reg [3:0] videocap_save_state=3; // FIXME
   
   always @(posedge m00_axi_aclk) begin
-    m00_axi_wstrb <= 4'b1111;
+    //m00_axi_wstrb <= 4'b1111;
     m00_axi_awlen <= 'h1;
     m00_axi_awsize <= 'h4;
     m00_axi_awburst <= 'h1;
@@ -906,8 +908,8 @@ module MNTZorro_v0_1_S00_AXI
     m00_axi_wlast <= 'h1;
     m00_axi_bready <= 'h1;
     
-    m00_axi_awaddr <= 'h110000+(videocap_save_x+(videocap_y2*640))*4;
-    m00_axi_wdata <= videocap_buf[videocap_save_x];
+    /*m00_axi_awaddr <= 'h110000+(videocap_save_x+(videocap_y2*640))*4;
+    m00_axi_wdata  <= videocap_buf[videocap_save_x];
   
     // save newly captured line
     if (videocap_save_state==0) begin
@@ -931,7 +933,7 @@ module MNTZorro_v0_1_S00_AXI
       //if (m00_axi_bvalid) begin
         videocap_save_state <= 0;
       //end
-    end
+    end*/
         
   end
   
@@ -1073,7 +1075,7 @@ module MNTZorro_v0_1_S00_AXI
             dataout_enable <= 0;
             dataout <= 0;
             z_ovr <= 1;
-            zaddr_regpart <= zaddr_sync2[15:0];
+            zaddr_regpart <= z2_mapped_addr;
             zorro_state <= Z2_REGWRITE;
             
           end else if (z2_read && zaddr_in_reg) begin
@@ -1083,7 +1085,7 @@ module MNTZorro_v0_1_S00_AXI
             data_out <= default_data; //'hffff;
             slaven <= 1;
             z_ovr <= 1;
-            zaddr_regpart <= zaddr_sync2[15:0];
+            zaddr_regpart <= z2_mapped_addr;
             zorro_state <= Z2_REGREAD;
             
           end else if (z2_read && zaddr_in_ram) begin
@@ -1152,7 +1154,11 @@ module MNTZorro_v0_1_S00_AXI
           if (datastrobe_synced) begin
             zorro_write_capture_bytes <= {~znUDS_sync[1],~znLDS_sync[1]};
             zorro_write_capture_data <= zdata_in_sync; //_sync;
-            zorro_state <= WAIT_WRITE2;
+            
+            if (last_addr<'h10000)
+              zorro_state <= WAIT_WRITE2;
+            else
+              zorro_state <= WAIT_WRITE_DMA_Z2;
           end
         end
       end
@@ -1165,6 +1171,22 @@ module MNTZorro_v0_1_S00_AXI
         zorro_state <= Z2_WRITE_FINALIZE;
       end
       
+      WAIT_WRITE_DMA_Z2: begin
+        if (last_addr[1])
+          m00_axi_wstrb <= {zorro_write_capture_bytes,2'b0};
+        else
+          m00_axi_wstrb <= {2'b0,zorro_write_capture_bytes};
+        
+        // FIXME
+        m00_axi_awaddr <= ('h100000+last_addr)&'hfffffc;
+        m00_axi_wdata  <= {zorro_write_capture_data, zorro_write_capture_data};
+        m00_axi_awvalid <= 1;
+        m00_axi_wvalid <= 1;
+        if (m00_axi_awready) begin  // TODO wready?
+          zorro_state <= Z2_ENDCYCLE;
+        end
+      end
+      
       Z2_WRITE_FINALIZE: begin
         if (!zorro_ram_write_request) begin
           zorro_state <= Z2_ENDCYCLE;
@@ -1172,6 +1194,9 @@ module MNTZorro_v0_1_S00_AXI
       end
       
       Z2_ENDCYCLE: begin
+        m00_axi_awvalid <= 0;
+        m00_axi_wvalid <= 0;
+        
         if (!z2_addr_valid) begin
           dtack <= 0;
           slaven <= 0;
@@ -1203,12 +1228,12 @@ module MNTZorro_v0_1_S00_AXI
       REGREAD: begin
         zorro_state <= Z2_REGREAD_POST;
         case (regread_addr&'hff)
-          'h00: begin
+          /*'h00: begin
             rr_data <= video_control_data; 
             end
           'h04: begin
             rr_data <= video_control_op; 
-            end
+            end*/
           default: begin
             rr_data[31:16] <= REVISION;
             rr_data[15:0]  <= REVISION;
