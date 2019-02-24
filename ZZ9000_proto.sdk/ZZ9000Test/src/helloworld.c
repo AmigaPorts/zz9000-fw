@@ -20,6 +20,12 @@ typedef u8 AddressType;
 #define HDMI_I2C_ADDR 	0x3b
 #define IIC_SCLK_RATE	400000
 
+#define MNTVA_COLOR_8BIT     0
+#define MNTVA_COLOR_16BIT565 1
+#define MNTVA_COLOR_32BIT    2
+#define MNTVA_COLOR_1BIT     3
+#define MNTVA_COLOR_15BIT    4
+
 XIicPs Iic;
 
 int hdmi_ctrl_write_byte(u8 addr, u8 value) {
@@ -138,9 +144,10 @@ static u32* framebuffer=0;
 static u32  framebuffer_pan_offset=0;
 static u32  blitter_dst_offset=0;
 static u32  blitter_src_offset=0;
-static u32  vmode_hsize=800, vmode_vsize=600;
+static u32  vmode_hsize=640, vmode_vsize=480;
 
-int init_vdma(int hsize, int vsize) {
+// 32bit: hdiv=1, 16bit: hdiv=2, 8bit: hdiv=4, ...
+int init_vdma(int hsize, int vsize, int hdiv) {
 	int status;
 	XAxiVdma_Config *Config;
 
@@ -160,8 +167,8 @@ int init_vdma(int hsize, int vsize) {
 	XAxiVdma_DmaSetup ReadCfg;
 
 	ReadCfg.VertSizeInput       = vsize;
-	ReadCfg.HoriSizeInput       = stride;
-	ReadCfg.Stride              = stride;
+	ReadCfg.HoriSizeInput       = stride; // note: changing this breaks the output
+	ReadCfg.Stride              = stride/hdiv; // note: changing this is not a problem
 	ReadCfg.FrameDelay          = 0;      /* This example does not test frame delay */
 	ReadCfg.EnableCircularBuf   = 1;      /* Only 1 buffer, continuous loop */
 	ReadCfg.EnableSync          = 0;      /* Gen-Lock */
@@ -422,7 +429,7 @@ void pixelclock_init(int mhz) {
 	printf("muldiv: %x\n", muldiv);
 }
 
-void video_system_init(int vmode, int hres, int vres, int mhz, int vhz) {
+void video_system_init(int vmode, int hres, int vres, int mhz, int vhz, int colormode) {
 
     printf("pixelclock_init()...\n");
 	pixelclock_init(mhz);
@@ -438,7 +445,10 @@ void video_system_init(int vmode, int hres, int vres, int mhz, int vhz) {
     set_video_mode(vmode, mhz, vhz);
 
     printf("init_vdma()...\n");
-    init_vdma(hres, vres);
+	int hdiv=1;
+	if (colormode==MNTVA_COLOR_16BIT565) hdiv=2;
+	else if (colormode==MNTVA_COLOR_8BIT) hdiv=4;
+    init_vdma(hres, vres, hdiv);
     printf("done.\n");
 
     usleep(10000);
@@ -517,9 +527,29 @@ int main()
 
     //video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60);
     //video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
-    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60);
+    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60, MNTVA_COLOR_16BIT565);
 
     int need_req_ack = 0;
+
+	u8* mem = (u8*)framebuffer;
+
+	// FIXME!
+#define MNTZ_BASE_ADDR 0x43C00000
+
+	// Our address space is relative to the autoconfig base address (for example, it could be 0x600000)
+#define MNT_REG_BASE    0x000000
+#define MNT_FB_BASE     0x010000
+#define MNT_BASE_MODE   			MNT_REG_BASE+0x02
+#define MNT_BASE_COLORMODE   		MNT_REG_BASE+0x0e
+#define MNT_BASE_RECTOP 			MNT_REG_BASE+0x10
+#define MNT_BASE_PAN_HI 			MNT_REG_BASE+0x0a
+#define MNT_BASE_PAN_LO 			MNT_REG_BASE+0x0c
+#define MNT_BASE_BLIT_SRC_HI 		MNT_REG_BASE+0x28
+#define MNT_BASE_BLIT_SRC_LO 		MNT_REG_BASE+0x2a
+#define MNT_BASE_BLIT_DST_HI 		MNT_REG_BASE+0x2c
+#define MNT_BASE_BLIT_DST_LO 		MNT_REG_BASE+0x2e
+#define MNT_BASE_BLITTER_COLORMODE 	MNT_REG_BASE+0x30
+#define MNT_BASE_VIDEOCAP_MODE 		MNT_REG_BASE+0x32
 
     // registers
 
@@ -531,28 +561,12 @@ int main()
     uint16_t rect_y3=10;
     uint16_t rect_pitch=640;
     uint32_t rect_rgb=0;
-
-	u8* mem = (u8*)framebuffer;
-
-	// FIXME!
-#define MNTZ_BASE_ADDR 0x43C00000
-
-	// Our address space is relative to the autoconfig base address (for example, it could be 0x600000)
-#define MNT_REG_BASE    0x000000
-#define MNT_FB_BASE     0x010000
-#define MNT_BASE_MODE   MNT_REG_BASE+0x02
-#define MNT_BASE_RECTOP MNT_REG_BASE+0x10
-#define MNT_BASE_PAN_HI MNT_REG_BASE+0x0a
-#define MNT_BASE_PAN_LO MNT_REG_BASE+0x0c
-#define MNT_BASE_BLIT_SRC_HI MNT_REG_BASE+0x28
-#define MNT_BASE_BLIT_SRC_LO MNT_REG_BASE+0x2a
-#define MNT_BASE_BLIT_DST_HI MNT_REG_BASE+0x2c
-#define MNT_BASE_BLIT_DST_LO MNT_REG_BASE+0x2e
-#define MNT_BASE_VIDEOCAP_MODE MNT_REG_BASE+0x30
+    uint32_t blitter_colormode=MNTVA_COLOR_16BIT565;
+    uint16_t colormode=MNTVA_COLOR_16BIT565;
 
     while(1) {
 		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
-		u32 zdebug = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
+		//u32 zdebug = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
 
         u32 writereq   = (zstate&(1<<31));
         u32 readreq    = (zstate&(1<<30));
@@ -562,7 +576,7 @@ int main()
         zstate = zstate&0xf;
         if (zstate>40) zstate=41;
 
-        printf("%08lx\n",zdebug);
+        //printf("%08lx\n",zdebug);
 
         /*if (zstate!=old_zstate) {
         	printf("addr: %08lx data: %04lx %s %s %s %s strb: %lx%lx%lx%lx %ld %s\r\n",zaddr,zdata,
@@ -596,7 +610,11 @@ int main()
 				if (zaddr==MNT_BASE_PAN_HI) framebuffer_pan_offset=zdata<<16;
 				else if (zaddr==MNT_BASE_PAN_LO) {
 					framebuffer_pan_offset|=zdata;
-					init_vdma(vmode_hsize,vmode_vsize);
+					// FIXME duplication
+					int hdiv=1;
+					if (colormode==MNTVA_COLOR_16BIT565) hdiv=2;
+					else if (colormode==MNTVA_COLOR_8BIT) hdiv=4;
+					init_vdma(vmode_hsize,vmode_vsize,hdiv);
 				}
 				else if (zaddr==MNT_BASE_BLIT_SRC_HI) blitter_src_offset=zdata<<16;
 				else if (zaddr==MNT_BASE_BLIT_SRC_LO) blitter_src_offset|=zdata;
@@ -626,21 +644,31 @@ int main()
 					//printf("rectfill: %d %d %d %d %08lx\n",rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
 
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
-					fill_rect(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
+
+					if (blitter_colormode==MNTVA_COLOR_16BIT565) {
+						fill_rect16(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
+					} else if (blitter_colormode==MNTVA_COLOR_8BIT) {
+						fill_rect8(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb>>24);
+					} else if (blitter_colormode==MNTVA_COLOR_32BIT) {
+						fill_rect32(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
+					}
+
 					//Xil_DCacheFlush();
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x14) {
+					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
+
 					// copy rectangle
-					uint16_t ys=rect_y3;
-					for (uint16_t y=rect_y1; y<=rect_y2; y++) {
-						uint16_t xs=rect_x3;
-						for (uint16_t x=rect_x1; x<=rect_x2; x++) {
-							((u32*)((u32)framebuffer+blitter_dst_offset))[y*rect_pitch+x]=((u32*)((u32)framebuffer+blitter_src_offset))[ys*rect_pitch+xs];
-							xs++;
-						}
-						ys++;
+					if (blitter_colormode==MNTVA_COLOR_16BIT565) {
+						// 16 bit
+						copy_rect16(rect_x1,rect_y1,rect_x2,rect_y2,rect_x3,rect_y3);
+					} else if (blitter_colormode==MNTVA_COLOR_8BIT) {
+						// 8 bit
+						copy_rect8(rect_x1,rect_y1,rect_x2,rect_y2,rect_x3,rect_y3);
+					} else {
+						// 32 bit
+						copy_rect32(rect_x1,rect_y1,rect_x2,rect_y2,rect_x3,rect_y3);
 					}
-					//Xil_DCacheFlush();
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x16) {
 					// fill triangle
@@ -650,10 +678,11 @@ int main()
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
 					fill_triangle(a,b,c,rect_rgb);
 				}
-				else if (zaddr==MNT_BASE_RECTOP+0x20) {
-					// demo
-					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
-					render_faces(zdata);
+				else if (zaddr==MNT_BASE_BLITTER_COLORMODE) {
+					// blitter_colormode
+					//set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
+					//render_faces(zdata);
+					blitter_colormode = zdata;
 				}
 
 				else if (zaddr==MNT_BASE_MODE) {
@@ -661,22 +690,25 @@ int main()
 					// https://github.com/Xilinx/embeddedsw/blob/master/XilinxProcessorIPLib/drivers/vtc/src/xvtc.c
 
 					if (zdata==0) {
-					    video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60);
+					    video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60, colormode);
 					} else if (zdata==1) {
-					    video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
+					    video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60, colormode);
 					} else if (zdata==2) {
-					    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60);
+					    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60, colormode);
 					} else if (zdata==3) {
-					    video_system_init(XVTC_VMODE_PAL, 720, 288, 27, 50);
+					    video_system_init(XVTC_VMODE_PAL, 720, 288, 27, 50, colormode);
 					} else if (zdata==4) {
-					    video_system_init(XVTC_VMODE_PAL, 720, 576, 27, 50);
+					    video_system_init(XVTC_VMODE_PAL, 720, 576, 27, 50, colormode);
 					} else if (zdata==5) {
-					    video_system_init(XVTC_VMODE_1080P, 1920, 1080, 150, 60);
+					    video_system_init(XVTC_VMODE_1080P, 1920, 1080, 150, 60, colormode);
 					} else if (zdata==6) {
-					    video_system_init(XVTC_VMODE_SXGA, 1280, 1024, 108, 60);
+					    video_system_init(XVTC_VMODE_SXGA, 1280, 1024, 108, 60, colormode);
 					} else {
 						printf("error: unknown mode\n");
 					}
+				}
+				else if (zaddr==MNT_BASE_COLORMODE) {
+					colormode=zdata;
 				}
 				else if (zaddr==MNT_BASE_VIDEOCAP_MODE) {
 					//videocap_mode=zdata;

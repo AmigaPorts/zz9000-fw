@@ -24,11 +24,57 @@ void horizline(uint16_t x1, uint16_t x2, uint16_t y, uint32_t color) {
 	//printf("hline: %d -- %d, %d %lx\n",x1,x2,y,color);
 }
 
-void fill_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb) {
+void fill_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb) {
 	for (uint16_t y=rect_y1; y<=rect_y2; y++) {
 		uint32_t* p=fb+y*fb_pitch;
 		for (uint16_t x=rect_x1; x<=rect_x2; x++) {
 			p[x]=rect_rgb;
+		}
+	}
+}
+
+void fill_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint8_t rect_rgb) {
+	for (uint16_t y=rect_y1; y<=rect_y2; y++) {
+		uint8_t* p=(uint8_t*)(fb+y*fb_pitch);
+		for (uint16_t x=rect_x1; x<=rect_x2; x++) {
+			p[x]=rect_rgb;
+		}
+	}
+}
+
+void fill_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_rgb) {
+	for (uint16_t y=rect_y1; y<=rect_y2; y++) {
+		uint16_t* p=(uint16_t*)(fb+y*fb_pitch);
+		for (uint16_t x=rect_x1; x<=rect_x2; x++) {
+			p[x]=rect_rgb;
+		}
+	}
+}
+
+void copy_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy) {
+	for (uint16_t sy=rect_sy, dy=rect_y1; dy<=rect_y2; sy++, dy++) {
+		uint32_t* dp=(uint32_t*)(fb+dy*fb_pitch);
+		uint32_t* sp=(uint32_t*)(fb+sy*fb_pitch);
+		for (uint16_t sx=rect_sx, dx=rect_x1; dx<=rect_x2; sx++, dx++) {
+			dp[dx]=sp[sx];
+		}
+	}
+}
+void copy_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy) {
+	for (uint16_t sy=rect_sy, dy=rect_y1; dy<=rect_y2; sy++, dy++) {
+		uint16_t* dp=(uint16_t*)(fb+dy*fb_pitch);
+		uint16_t* sp=(uint16_t*)(fb+sy*fb_pitch);
+		for (uint16_t sx=rect_sx, dx=rect_x1; dx<=rect_x2; sx++, dx++) {
+			dp[dx]=sp[sx];
+		}
+	}
+}
+void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy) {
+	for (uint16_t sy=rect_sy, dy=rect_y1; dy<=rect_y2; sy++, dy++) {
+		uint8_t* dp=(uint8_t*)(fb+dy*fb_pitch);
+		uint8_t* sp=(uint8_t*)(fb+sy*fb_pitch);
+		for (uint16_t sx=rect_sx, dx=rect_x1; dx<=rect_x2; sx++, dx++) {
+			dp[dx]=sp[sx];
 		}
 	}
 }
@@ -133,7 +179,7 @@ void render_faces(int y_angle) {
 
 	last_angle = y_angle;
 
-	fill_rect(200,200,600,400,0xffffffff);
+	fill_rect32(200,200,600,400,0xffffffff);
 
 	init_rot_matrix(y_angle,1,1,0);
 
