@@ -169,7 +169,7 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 	printf("VDMA HDIV: %d VDIV: %d\n",hdiv,vdiv);
 
 	ReadCfg.VertSizeInput       = vsize/vdiv;
-	ReadCfg.HoriSizeInput       = stride; // note: changing this breaks the output
+	ReadCfg.HoriSizeInput       = stride/hdiv; // note: changing this breaks the output
 	ReadCfg.Stride              = stride/hdiv; // note: changing this is not a problem
 	ReadCfg.FrameDelay          = 0;      /* This example does not test frame delay */
 	ReadCfg.EnableCircularBuf   = 1;      /* Only 1 buffer, continuous loop */
@@ -565,6 +565,7 @@ int main()
     uint16_t colormode=MNTVA_COLOR_16BIT565;
     uint16_t scalemode_x=0;
     uint16_t scalemode_y=0;
+    uint16_t hdiv=2, vdiv=1;
 
     while(1) {
 		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
@@ -612,13 +613,6 @@ int main()
 				if (zaddr==MNT_BASE_PAN_HI) framebuffer_pan_offset=zdata<<16;
 				else if (zaddr==MNT_BASE_PAN_LO) {
 					framebuffer_pan_offset|=zdata;
-					// FIXME duplication
-					int hdiv=1, vdiv=1;
-					if (colormode==MNTVA_COLOR_16BIT565) hdiv=2;
-					else if (colormode==MNTVA_COLOR_8BIT) hdiv=4;
-					hdiv<<=scalemode_x;
-					vdiv<<=scalemode_y;
-
 					init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
 				}
 				else if (zaddr==MNT_BASE_BLIT_SRC_HI) blitter_src_offset=zdata<<16;
@@ -690,20 +684,20 @@ int main()
 					blitter_colormode = zdata;
 				}
 				else if (zaddr==MNT_BASE_SCALEMODE) {
-					scalemode_x = zdata&1;
-					scalemode_y = (zdata&2)>>1;
+					vdiv=zdata;
+
+					// FIXME duplication
+					/*int hdiv=1, vdiv=1;
+					if (colormode==MNTVA_COLOR_16BIT565) hdiv=2;
+					else if (colormode==MNTVA_COLOR_8BIT) hdiv=4;
+					hdiv<<=scalemode_x;
+					hdiv<<=scalemode_y;
+					vdiv<<=scalemode_y;*/
 				}
 
 				else if (zaddr==MNT_BASE_MODE) {
 					printf("mode change: %d\n",zdata);
 					// https://github.com/Xilinx/embeddedsw/blob/master/XilinxProcessorIPLib/drivers/vtc/src/xvtc.c
-
-					// FIXME duplication
-					int hdiv=1, vdiv=1;
-					if (colormode==MNTVA_COLOR_16BIT565) hdiv=2;
-					else if (colormode==MNTVA_COLOR_8BIT) hdiv=4;
-					hdiv<<=scalemode_x;
-					vdiv<<=scalemode_y;
 
 					if (zdata==0) {
 					    video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60, hdiv, vdiv);
@@ -724,7 +718,8 @@ int main()
 					}
 				}
 				else if (zaddr==MNT_BASE_COLORMODE) {
-					colormode=zdata;
+					//colormode=zdata;
+					hdiv=zdata;
 				}
 				else if (zaddr==MNT_BASE_VIDEOCAP_MODE) {
 					//videocap_mode=zdata;

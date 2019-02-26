@@ -151,7 +151,7 @@ always @(posedge m_axis_vid_aclk)
           if (vsync_request) input_state <= 0;
           
           // output line almost finished, time to read the next line
-          if (cur_x == screen_width-32) begin // CHECKME was >=
+          if (cur_x > screen_width-16) begin
             if (scale_y)
               input_state <= 4;
             else
@@ -168,7 +168,13 @@ always @(posedge m_axis_vid_aclk)
         end
       4: begin
           // line duplication
-          if (cur_x == screen_width-64) begin // CHECKME was >=
+          if (cur_x < 16) begin // CHECKME was >=
+            input_state <= 5;
+          end
+      end
+      5: begin
+          // line duplication
+          if (cur_x > screen_width-16) begin
             input_state <= 1;
           end
       end
@@ -204,32 +210,42 @@ begin
   endcase
 end
 
-wire [9:0] cur_x_linebuf = colormode==CMODE_32BIT ? (cur_x>>scale_x) : (colormode==CMODE_16BIT ? (cur_x[9:1]>>scale_x) : (cur_x[9:2]>>scale_x));
+wire [9:0] cur_x_linebuf = colormode==CMODE_32BIT ? (cur_x>>scale_x) 
+                                                  : (colormode==CMODE_16BIT ? (cur_x>>(2'b01+scale_x)) 
+                                                                            : (cur_x>>(2'b10+scale_x)));
 reg [31:0] palout;
-reg [31:0] palout_dly;
 
 always @(posedge m_axis_vid_aclk)
 begin
 
-  case (cur_x[1:0])
-    2'b11: pixout8 <= pixout32[31:24];
-    2'b10: pixout8 <= pixout32[23:16];
-    2'b01: pixout8 <= pixout32[15:8];
-    2'b00: pixout8 <= pixout32[7:0];
-  endcase
+  if (scale_x==1) begin
+    case (cur_x[2:1])
+      2'b11: pixout8 <= pixout32[31:24];
+      2'b10: pixout8 <= pixout32[23:16];
+      2'b01: pixout8 <= pixout32[15:8];
+      2'b00: pixout8 <= pixout32[7:0];
+    endcase
+  end else begin
+    case (cur_x[1:0])
+      2'b11: pixout8 <= pixout32[31:24];
+      2'b10: pixout8 <= pixout32[23:16];
+      2'b01: pixout8 <= pixout32[15:8];
+      2'b00: pixout8 <= pixout32[7:0];
+    endcase
+  end
   
-  case (cur_x[0])
+  case (cur_x[scale_x])
     1'b1: pixout16 <= {pixout32[23:16],pixout32[31:24]};
     1'b0: pixout16 <= {pixout32[7:0],  pixout32[15:8]};
   endcase
   
   pixout32 <= line_buffer[cur_x_linebuf];
   palout <= palette[pixout8];
-  palout_dly <= palout;
+  //palout_dly <= palout;
   
   case (colormode)
     CMODE_16BIT: pixout <= {8'b0,blue16,green16,red16};
-    CMODE_8BIT:  pixout <= palout_dly;
+    CMODE_8BIT:  pixout <= palout;
     CMODE_32BIT: pixout <= pixout32;
   endcase
   
