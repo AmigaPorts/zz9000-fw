@@ -147,7 +147,7 @@ static u32  blitter_src_offset=0;
 static u32  vmode_hsize=640, vmode_vsize=480;
 
 // 32bit: hdiv=1, 16bit: hdiv=2, 8bit: hdiv=4, ...
-int init_vdma(int hsize, int vsize, int hdiv) {
+int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 	int status;
 	XAxiVdma_Config *Config;
 
@@ -166,7 +166,9 @@ int init_vdma(int hsize, int vsize, int hdiv) {
 
 	XAxiVdma_DmaSetup ReadCfg;
 
-	ReadCfg.VertSizeInput       = vsize;
+	printf("VDMA HDIV: %d VDIV: %d\n",hdiv,vdiv);
+
+	ReadCfg.VertSizeInput       = vsize/vdiv;
 	ReadCfg.HoriSizeInput       = stride; // note: changing this breaks the output
 	ReadCfg.Stride              = stride/hdiv; // note: changing this is not a problem
 	ReadCfg.FrameDelay          = 0;      /* This example does not test frame delay */
@@ -429,7 +431,7 @@ void pixelclock_init(int mhz) {
 	printf("muldiv: %x\n", muldiv);
 }
 
-void video_system_init(int vmode, int hres, int vres, int mhz, int vhz, int colormode) {
+void video_system_init(int vmode, int hres, int vres, int mhz, int vhz, int hdiv, int vdiv) {
 
     printf("pixelclock_init()...\n");
 	pixelclock_init(mhz);
@@ -445,10 +447,7 @@ void video_system_init(int vmode, int hres, int vres, int mhz, int vhz, int colo
     set_video_mode(vmode, mhz, vhz);
 
     printf("init_vdma()...\n");
-	int hdiv=1;
-	if (colormode==MNTVA_COLOR_16BIT565) hdiv=2;
-	else if (colormode==MNTVA_COLOR_8BIT) hdiv=4;
-    init_vdma(hres, vres, hdiv);
+    init_vdma(hres, vres, hdiv, vdiv);
     printf("done.\n");
 
     usleep(10000);
@@ -527,7 +526,7 @@ int main()
 
     //video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60);
     //video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
-    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60, MNTVA_COLOR_16BIT565);
+    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60, 2, 1);
 
     int need_req_ack = 0;
 
@@ -540,6 +539,7 @@ int main()
 #define MNT_REG_BASE    0x000000
 #define MNT_FB_BASE     0x010000
 #define MNT_BASE_MODE   			MNT_REG_BASE+0x02
+#define MNT_BASE_SCALEMODE   		MNT_REG_BASE+0x04
 #define MNT_BASE_COLORMODE   		MNT_REG_BASE+0x0e
 #define MNT_BASE_RECTOP 			MNT_REG_BASE+0x10
 #define MNT_BASE_PAN_HI 			MNT_REG_BASE+0x0a
@@ -563,6 +563,8 @@ int main()
     uint32_t rect_rgb=0;
     uint32_t blitter_colormode=MNTVA_COLOR_16BIT565;
     uint16_t colormode=MNTVA_COLOR_16BIT565;
+    uint16_t scalemode_x=0;
+    uint16_t scalemode_y=0;
 
     while(1) {
 		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
@@ -611,10 +613,13 @@ int main()
 				else if (zaddr==MNT_BASE_PAN_LO) {
 					framebuffer_pan_offset|=zdata;
 					// FIXME duplication
-					int hdiv=1;
+					int hdiv=1, vdiv=1;
 					if (colormode==MNTVA_COLOR_16BIT565) hdiv=2;
 					else if (colormode==MNTVA_COLOR_8BIT) hdiv=4;
-					init_vdma(vmode_hsize,vmode_vsize,hdiv);
+					hdiv<<=scalemode_x;
+					vdiv<<=scalemode_y;
+
+					init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
 				}
 				else if (zaddr==MNT_BASE_BLIT_SRC_HI) blitter_src_offset=zdata<<16;
 				else if (zaddr==MNT_BASE_BLIT_SRC_LO) blitter_src_offset|=zdata;
@@ -684,25 +689,36 @@ int main()
 					//render_faces(zdata);
 					blitter_colormode = zdata;
 				}
+				else if (zaddr==MNT_BASE_SCALEMODE) {
+					scalemode_x = zdata&1;
+					scalemode_y = (zdata&2)>>1;
+				}
 
 				else if (zaddr==MNT_BASE_MODE) {
 					printf("mode change: %d\n",zdata);
 					// https://github.com/Xilinx/embeddedsw/blob/master/XilinxProcessorIPLib/drivers/vtc/src/xvtc.c
 
+					// FIXME duplication
+					int hdiv=1, vdiv=1;
+					if (colormode==MNTVA_COLOR_16BIT565) hdiv=2;
+					else if (colormode==MNTVA_COLOR_8BIT) hdiv=4;
+					hdiv<<=scalemode_x;
+					vdiv<<=scalemode_y;
+
 					if (zdata==0) {
-					    video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60, colormode);
+					    video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60, hdiv, vdiv);
 					} else if (zdata==1) {
-					    video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60, colormode);
+					    video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60, hdiv, vdiv);
 					} else if (zdata==2) {
-					    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60, colormode);
+					    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60, hdiv, vdiv);
 					} else if (zdata==3) {
-					    video_system_init(XVTC_VMODE_PAL, 720, 288, 27, 50, colormode);
+					    video_system_init(XVTC_VMODE_PAL, 720, 288, 27, 50, hdiv, vdiv);
 					} else if (zdata==4) {
-					    video_system_init(XVTC_VMODE_PAL, 720, 576, 27, 50, colormode);
+					    video_system_init(XVTC_VMODE_PAL, 720, 576, 27, 50, hdiv, vdiv);
 					} else if (zdata==5) {
-					    video_system_init(XVTC_VMODE_1080P, 1920, 1080, 150, 60, colormode);
+					    video_system_init(XVTC_VMODE_1080P, 1920, 1080, 150, 60, hdiv, vdiv);
 					} else if (zdata==6) {
-					    video_system_init(XVTC_VMODE_SXGA, 1280, 1024, 108, 60, colormode);
+					    video_system_init(XVTC_VMODE_SXGA, 1280, 1024, 108, 60, hdiv, vdiv);
 					} else {
 						printf("error: unknown mode\n");
 					}

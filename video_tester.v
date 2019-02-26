@@ -68,7 +68,7 @@ localparam MAXWIDTH=1280;
 reg [31:0] line_buffer[MAXWIDTH-1:0];
 
 // (input) vdma state
-reg [2:0] input_state = 0;
+reg [3:0] input_state = 0;
 reg [9:0] inptr = 0;
 reg ready_for_vdma = 0;
 
@@ -151,8 +151,11 @@ always @(posedge m_axis_vid_aclk)
           if (vsync_request) input_state <= 0;
           
           // output line almost finished, time to read the next line
-          if (cur_x >= screen_width-32) begin
-            input_state <= 1;
+          if (cur_x == screen_width-32) begin // CHECKME was >=
+            if (scale_y)
+              input_state <= 4;
+            else
+              input_state <= 1;
           end
         end
       3: begin
@@ -163,6 +166,12 @@ always @(posedge m_axis_vid_aclk)
             input_state <= 2;
           end
         end
+      4: begin
+          // line duplication
+          if (cur_x == screen_width-64) begin // CHECKME was >=
+            input_state <= 1;
+          end
+      end
     endcase
   end
 
@@ -195,8 +204,9 @@ begin
   endcase
 end
 
-wire [9:0] cur_x_linebuf = colormode==CMODE_32BIT ? cur_x : (colormode==CMODE_16BIT ? cur_x[9:1] : cur_x[9:2]);
+wire [9:0] cur_x_linebuf = colormode==CMODE_32BIT ? (cur_x>>scale_x) : (colormode==CMODE_16BIT ? (cur_x[9:1]>>scale_x) : (cur_x[9:2]>>scale_x));
 reg [31:0] palout;
+reg [31:0] palout_dly;
 
 always @(posedge m_axis_vid_aclk)
 begin
@@ -215,10 +225,11 @@ begin
   
   pixout32 <= line_buffer[cur_x_linebuf];
   palout <= palette[pixout8];
+  palout_dly <= palout;
   
   case (colormode)
     CMODE_16BIT: pixout <= {8'b0,blue16,green16,red16};
-    CMODE_8BIT:  pixout <= palout;
+    CMODE_8BIT:  pixout <= palout_dly;
     CMODE_32BIT: pixout <= pixout32;
   endcase
   
