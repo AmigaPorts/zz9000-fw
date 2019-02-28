@@ -509,7 +509,7 @@ int main()
     init_platform();
 
     framebuffer=(u32*)0x110000;
-    framebuffer_pan_offset=0;
+    framebuffer_pan_offset=0x1c200;
 
     //mandel(0);
 
@@ -526,7 +526,7 @@ int main()
 
     //video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60);
     //video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
-    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60, 2, 1);
+    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60, 1, 2);
 
     int need_req_ack = 0;
 
@@ -561,11 +561,8 @@ int main()
     uint16_t rect_y3=10;
     uint16_t rect_pitch=640;
     uint32_t rect_rgb=0;
-    uint32_t blitter_colormode=MNTVA_COLOR_16BIT565;
-    uint16_t colormode=MNTVA_COLOR_16BIT565;
-    uint16_t scalemode_x=0;
-    uint16_t scalemode_y=0;
-    uint16_t hdiv=2, vdiv=1;
+    uint32_t blitter_colormode=MNTVA_COLOR_32BIT;
+    uint16_t hdiv=1, vdiv=2;
 
     while(1) {
 		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);

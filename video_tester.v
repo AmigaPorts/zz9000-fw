@@ -59,9 +59,9 @@ localparam CMODE_15BIT=4;
 reg [15:0] screen_width = 640;
 reg [15:0] screen_height = 480;
 reg scale_x = 0;
-reg scale_y = 0;
+reg scale_y = 1; // amiga boots in 640x256, so double the resolution vertically
 reg [31:0] palette[255:0];
-reg [1:0] colormode = CMODE_16BIT;
+reg [1:0] colormode = CMODE_32BIT;
 reg vsync_request = 0;
 
 localparam MAXWIDTH=1280;
@@ -218,7 +218,7 @@ reg [31:0] palout;
 always @(posedge m_axis_vid_aclk)
 begin
 
-  if (scale_x==1) begin
+  /*if (scale_x==1) begin
     case (cur_x[2:1])
       2'b11: pixout8 <= pixout32[31:24];
       2'b10: pixout8 <= pixout32[23:16];
@@ -232,7 +232,7 @@ begin
       2'b01: pixout8 <= pixout32[15:8];
       2'b00: pixout8 <= pixout32[7:0];
     endcase
-  end
+  end*/
   
   case (cur_x[scale_x])
     1'b1: pixout16 <= {pixout32[23:16],pixout32[31:24]};
