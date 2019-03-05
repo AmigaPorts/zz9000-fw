@@ -357,7 +357,7 @@ u32 dump_vdma_status(XAxiVdma *InstancePtr)
 }
 
 void fb_fill() {
-	for (int i=0; i<1280*720; i++) {
+	for (int i=0; i<1280*800; i++) {
 		framebuffer[i] = 0xffffffff;
 	}
 }
