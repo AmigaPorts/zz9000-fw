@@ -8,7 +8,7 @@
 #include "xiicps.h"
 #include "sleep.h"
 #include "xaxivdma.h"
-#include "xvtc.h"
+//#include "xvtc.h"
 #include "xil_cache.h"
 #include "xclk_wiz.h"
 
@@ -151,6 +151,11 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 	int status;
 	XAxiVdma_Config *Config;
 
+    // FIXME workaround for "scrolling" problem
+    if (vsize==1024 || (hdiv==1 && (vsize==480 || vsize==720 || vsize==600 || vsize==768))) {
+    	vsize--;
+    }
+
 	Config = XAxiVdma_LookupConfig(VDMA_DEVICE_ID);
 
 	if (!Config) {
@@ -202,7 +207,7 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 
 
 #define XVTC_DEVICE_ID			XPAR_VTC_0_DEVICE_ID
-XVtc	VtcInst;
+/*XVtc	VtcInst;
 
 int init_vtc() {
 	int status;
@@ -278,12 +283,12 @@ void dump_vtc_status()
 		VideoTiming.VSyncPolarity,
 	VideoTiming.Interlaced ? "Yes" : "No (Progressive)");
 	xil_printf("\n\r");
-}
+}*/
 
 // example: XVTC_VMODE_VGA, 28000000, 60
-void set_video_mode(u16 mode, u32 pixelclock_hz, u16 vhz)
+void set_video_mode(u16 htotal, u16 vtotal, u32 pixelclock_hz, u16 vhz)
 {
-	XVtc_SetGeneratorVideoMode(&VtcInst, mode);
+	/*XVtc_SetGeneratorVideoMode(&VtcInst, mode);
 
 	XVtc_Timing timing;
 	XVtc_GetGeneratorTiming(&VtcInst, &timing);
@@ -295,7 +300,7 @@ void set_video_mode(u16 mode, u32 pixelclock_hz, u16 vhz)
 	XVtc_ConvTiming2Signal(&VtcInst, &timing, &signal, &horiOffsets, &polarity);
 
 	XVtc_RegUpdateEnable(&VtcInst);
-	XVtc_EnableGenerator(&VtcInst);
+	XVtc_EnableGenerator(&VtcInst);*/
 
 	/*
 	    0x00, 0x4c,	// PixelClock/10000 - LSB
@@ -316,10 +321,10 @@ void set_video_mode(u16 mode, u32 pixelclock_hz, u16 vhz)
 	sii_mode[2*1+1] = (pixelclock_hz/10000)>>8;
 	sii_mode[2*2+1] = vhz*100;
 	sii_mode[2*3+1] = (vhz*100)>>8;
-	sii_mode[2*4+1] = signal.HTotal;
-	sii_mode[2*5+1] = signal.HTotal>>8;
-	sii_mode[2*6+1] = signal.V0Total;
-	sii_mode[2*7+1] = signal.V0Total>>8;
+	sii_mode[2*4+1] = htotal;
+	sii_mode[2*5+1] = htotal>>8;
+	sii_mode[2*6+1] = vtotal;
+	sii_mode[2*7+1] = vtotal>>8;
 }
 
 u32 dump_vdma_status(XAxiVdma *InstancePtr)
@@ -391,6 +396,10 @@ void pixelclock_init(int mhz) {
 		mul = 11;
 		div = 1;
 		otherdiv = 11;
+	} else if (mhz==65) {
+		mul = 13;
+		div = 1;
+		otherdiv = 15;
 	} else if (mhz==27) {
 		mul = 18;
 		div = 1;
@@ -431,7 +440,7 @@ void pixelclock_init(int mhz) {
 	printf("muldiv: %x\n", muldiv);
 }
 
-void video_system_init(int vmode, int hres, int vres, int mhz, int vhz, int hdiv, int vdiv) {
+void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int vhz, int hdiv, int vdiv) {
 
     printf("pixelclock_init()...\n");
 	pixelclock_init(mhz);
@@ -439,12 +448,11 @@ void video_system_init(int vmode, int hres, int vres, int mhz, int vhz, int hdiv
     printf("hdmi_ctrl_init()...\n");
     hdmi_ctrl_init();
 
-    printf("init_vtc()...\n");
-
-    init_vtc();
+    //printf("init_vtc()...\n");
+    //init_vtc();
 
     printf("set_video_mode()...\n");
-    set_video_mode(vmode, mhz, vhz);
+    set_video_mode(htotal, vtotal, mhz, vhz);
 
     printf("init_vdma()...\n");
     init_vdma(hres, vres, hdiv, vdiv);
@@ -453,7 +461,7 @@ void video_system_init(int vmode, int hres, int vres, int mhz, int vhz, int hdiv
     usleep(10000);
 
     dump_vdma_status(&vdma);
-    dump_vtc_status();
+    //dump_vtc_status();
 
     vmode_hsize = hres;
     vmode_vsize = vres;
@@ -524,9 +532,9 @@ int main()
 
     fb_fill();
 
-    //video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60);
+    video_system_init(1280, 720, 1980, 750, 75, 60, 1, 1);
     //video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60);
-    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60, 1, 2);
+    //video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60, 1, 2);
 
     int need_req_ack = 0;
 
@@ -550,6 +558,8 @@ int main()
 #define MNT_BASE_BLIT_DST_LO 		MNT_REG_BASE+0x2e
 #define MNT_BASE_BLITTER_COLORMODE 	MNT_REG_BASE+0x30
 #define MNT_BASE_VIDEOCAP_MODE 		MNT_REG_BASE+0x32
+#define MNT_BASE_HSIZE 		MNT_REG_BASE+0x34
+#define MNT_BASE_VSIZE 		MNT_REG_BASE+0x36
 
     // registers
 
@@ -576,7 +586,7 @@ int main()
         zstate = zstate&0xf;
         if (zstate>40) zstate=41;
 
-        //printf("%08lx\n",zdebug);
+        //printf("%d\n",zdebug);
 
         /*if (zstate!=old_zstate) {
         	printf("addr: %08lx data: %04lx %s %s %s %s strb: %lx%lx%lx%lx %ld %s\r\n",zaddr,zdata,
@@ -697,22 +707,28 @@ int main()
 					// https://github.com/Xilinx/embeddedsw/blob/master/XilinxProcessorIPLib/drivers/vtc/src/xvtc.c
 
 					if (zdata==0) {
-					    video_system_init(XVTC_VMODE_720P, 1280, 720, 75, 60, hdiv, vdiv);
+					    video_system_init(1280, 720, 1980, 750, 75, 60, hdiv, vdiv);
 					} else if (zdata==1) {
-					    video_system_init(XVTC_VMODE_SVGA, 800, 600, 40, 60, hdiv, vdiv);
+					    video_system_init(800, 600, 1056, 628, 40, 60, hdiv, vdiv);
 					} else if (zdata==2) {
-					    video_system_init(XVTC_VMODE_VGA, 640, 480, 25, 60, hdiv, vdiv);
+					    video_system_init(640, 480, 800, 525, 25, 60, hdiv, vdiv);
 					} else if (zdata==3) {
-					    video_system_init(XVTC_VMODE_PAL, 720, 288, 27, 50, hdiv, vdiv);
+					    video_system_init(1024, 768, 1184, 806, 65, 60, hdiv, vdiv);
 					} else if (zdata==4) {
-					    video_system_init(XVTC_VMODE_PAL, 720, 576, 27, 50, hdiv, vdiv);
+					    video_system_init(1280, 1024, 1688, 1066, 108, 60, hdiv, vdiv);
 					} else if (zdata==5) {
-					    video_system_init(XVTC_VMODE_1080P, 1920, 1080, 150, 60, hdiv, vdiv);
-					} else if (zdata==6) {
-					    video_system_init(XVTC_VMODE_SXGA, 1280, 1024, 108, 60, hdiv, vdiv);
+					    video_system_init(1920, 1080, 2200, 1125, 150, 60, hdiv, vdiv);
 					} else {
 						printf("error: unknown mode\n");
 					}
+				}
+				else if (zaddr==MNT_BASE_HSIZE) {
+					vmode_hsize=zdata;
+					init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
+				}
+				else if (zaddr==MNT_BASE_VSIZE) {
+					vmode_vsize=zdata;
+					init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
 				}
 				else if (zaddr==MNT_BASE_COLORMODE) {
 					//colormode=zdata;

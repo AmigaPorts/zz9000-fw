@@ -117,6 +117,7 @@ module MNTZorro_v0_1_S00_AXI
   
   output reg [31:0] video_control_data,
   output reg [7:0]  video_control_op,
+  input wire [7:0] video_debug,
   
 	 // User ports ends
 	 // Do not modify the ports beyond this line
@@ -639,6 +640,8 @@ module MNTZorro_v0_1_S00_AXI
 
   reg z_confout = 0;
   assign ZORRO_NCFGOUT = ZORRO_NCFGIN?1'b1:(~z_confout);
+  
+  reg [7:0] video_debug_reg;
 
   always @(posedge S_AXI_ACLK) begin
     znUDS_sync  <= {znUDS_sync[1:0],ZORRO_NUDS};
@@ -735,6 +738,8 @@ module MNTZorro_v0_1_S00_AXI
     z_reset <= (znRST_sync==2'b00);
     z_cfgin <= (znCFGIN_sync==3'b000);
     z_cfgin_lo <= (znCFGIN_sync==3'b111);
+    
+    video_debug_reg <= video_debug;
   end // always @ (posedge S_AXI_ACLK)
 
   reg [15:0] REVISION = 'h7a09; // z9
@@ -808,7 +813,7 @@ module MNTZorro_v0_1_S00_AXI
   reg [15:0] testreg_1 = 0;
   
   
-  reg videocap_mode = 1;
+  reg videocap_mode = 0;
   reg [9:0] videocap_hs = 0;
   reg [9:0] videocap_vs = 0;
   reg [2:0] videocap_state = 0;
@@ -910,9 +915,15 @@ module MNTZorro_v0_1_S00_AXI
     end
   end
   
-  reg [9:0] videocap_save_x=0;
+  reg [11:0] videocap_save_x=0;
+  reg [11:0] videocap_save_x2=0;
+  reg [11:0] videocap_yoffset=0;
+  reg [11:0] videocap_xoffset=0;
+  reg [11:0] videocap_pitch=640;
   reg [9:0] videocap_save_line_done=1;
-  reg [9:0] videocap_save_y=0;
+  reg [11:0] videocap_save_y=0;
+  reg [11:0] videocap_save_y2=0;
+  reg [11:0] videocap_save_addr=0;
   reg [3:0] videocap_save_state=0; // FIXME
   
   reg m00_axi_awready_reg;
@@ -934,9 +945,13 @@ module MNTZorro_v0_1_S00_AXI
     m00_axi_awready_reg <= m00_axi_awready;
     m00_axi_wready_reg <= m00_axi_wready;
     
-    if (videocap_mode) begin
+    videocap_save_x2 <= (videocap_save_x+videocap_xoffset);
+    videocap_save_y2 <= (videocap_y2+videocap_yoffset);
+    videocap_save_addr <= (videocap_save_y2*videocap_pitch)+videocap_save_x2;
+    
+    /*if (videocap_mode) begin
       m00_axi_wstrb <= 4'b1111;
-      m00_axi_awaddr <= 'h110000+(videocap_save_x+(videocap_y2*640))*4;
+      m00_axi_awaddr <= 'h110000+videocap_save_addr*4;
       if (videocap_save_x[0])
         m00_axi_wdata  <= videocap_buf[videocap_save_x>>1];
       else
@@ -968,7 +983,7 @@ module MNTZorro_v0_1_S00_AXI
           //end
         end
       endcase
-    end
+    end*/
   
   
     zorro_idle <= ((zorro_state==Z2_IDLE)||(zorro_state==Z3_IDLE));
@@ -1313,7 +1328,7 @@ module MNTZorro_v0_1_S00_AXI
     
     out_reg0 <= last_addr;
     out_reg1 <= {16'b0, zorro_write_capture_data};
-    out_reg2 <= video_control_data;
+    out_reg2 <= {24'b0, video_debug_reg};
     out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_write_capture_bytes, 20'b0, zorro_state};
   end
 
