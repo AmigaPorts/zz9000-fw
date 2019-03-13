@@ -93,7 +93,6 @@ reg [15:0] cur_y = 0;
 assign m_axis_vid_tready = ready_for_vdma;
 
 reg [15:0] counter_x = 0;
-reg [15:0] counter_x_dly = 0;
 reg [15:0] counter_y = 0;
 
 reg [15:0] need_line_fetch = 0;
@@ -282,72 +281,40 @@ always @(posedge dvi_clk) begin
   vga_scale_x <= scale_x;
   vga_colormode <= colormode;
   vga_fetch_threshold <= fetch_threshold;
-  
-  counter_x_dly <= counter_x;
-  
-  /*if (vga_scale_x==1) begin
-    case (counter_x_dly[2:1])
-      2'b11: pixout8 <= pixout32[31:24];
-      2'b10: pixout8 <= pixout32[23:16];
-      2'b01: pixout8 <= pixout32[15:8];
-      2'b00: pixout8 <= pixout32[7:0];
-    endcase
-  end else begin
-    case (counter_x_dly[1:0])
-      2'b11: pixout8 <= pixout32[31:24];
-      2'b10: pixout8 <= pixout32[23:16];
-      2'b01: pixout8 <= pixout32[15:8];
-      2'b00: pixout8 <= pixout32[7:0];
-    endcase
-  end*/
-  
-  /*if (vga_scale_x==1) begin
-    case (counter_x_dly[1])
-      1'b1: pixout16 <= {pixout32[23:16],pixout32[31:24]};
-      1'b0: pixout16 <= {pixout32[7:0]  ,pixout32[15:8] };
-    endcase
-  end else begin
-    case (counter_x_dly[0])
-      1'b1: pixout16 <= {pixout32[23:16],pixout32[31:24]};
-      1'b0: pixout16 <= {pixout32[7:0]  ,pixout32[15:8] };
-    endcase
-  end*/
 
-  if (vga_scale_x==1) begin
-    case (counter_x[2:1])
-      2'b00: pixout8 <= pixout32[31:24];
-      2'b11: pixout8 <= pixout32[23:16];
-      2'b10: pixout8 <= pixout32[15:8];
-      2'b01: pixout8 <= pixout32[7:0];
-    endcase
-  end else begin
-    case (counter_x[1:0])
-      2'b00: pixout8 <= pixout32[31:24];
-      2'b11: pixout8 <= pixout32[23:16];
-      2'b10: pixout8 <= pixout32[15:8];
-      2'b01: pixout8 <= pixout32[7:0];
-    endcase
-  end
-
-  case (counter_x[0])
-    1'b0: pixout16 <= {pixout32[23:16],pixout32[31:24]};
-    1'b1: pixout16 <= {pixout32[7:0]  ,pixout32[15:8] };
+  /*
+    pipelines:
+      
+    linebuf   pixout32    pixout32_dly  pixout32_dly2 pixout
+    linebuf   pixout32    pixout16      pixout32_dly  pixout
+    linebuf   pixout32    pixout8       palout        pixout
+  */
+  
+  case ({vga_scale_x,counter_subpixel[2:0]})
+    4'b0011: pixout8 <= pixout32[31:24];
+    4'b0000: pixout8 <= pixout32[23:16];
+    4'b0001: pixout8 <= pixout32[15:8];
+    4'b0010: pixout8 <= pixout32[7:0];
+    
+    4'b1111: pixout8 <= pixout32[31:24];
+    4'b1000: pixout8 <= pixout32[31:24];
+    4'b1001: pixout8 <= pixout32[23:16];
+    4'b1010: pixout8 <= pixout32[23:16];
+    4'b1011: pixout8 <= pixout32[15:8];
+    4'b1100: pixout8 <= pixout32[15:8];
+    4'b1101: pixout8 <= pixout32[7:0];
+    4'b1110: pixout8 <= pixout32[7:0];
   endcase
-  
-  /*
-localparam CMODE_8BIT=0;
-localparam CMODE_16BIT=1;
-localparam CMODE_32BIT=2;
-localparam CMODE_15BIT=4;
-  */
-  
-  /*
-  pipelines:
-  
-linebuf   pixout32    pixout32_dly  pixout32_dly2 pixout
-linebuf   pixout32    pixout16      pixout32_dly  pixout
-linebuf   pixout32    pixout8       palout        pixout
-  */
+
+  case ({vga_scale_x,counter_subpixel[1:0]})
+    3'b001: pixout16 <= {pixout32[23:16],pixout32[31:24]};
+    3'b000: pixout16 <= {pixout32[7:0]  ,pixout32[15:8] };
+    
+    3'b100: pixout16 <= {pixout32[23:16],pixout32[31:24]};
+    3'b111: pixout16 <= {pixout32[23:16],pixout32[31:24]};
+    3'b110: pixout16 <= {pixout32[7:0]  ,pixout32[15:8] };
+    3'b101: pixout16 <= {pixout32[7:0]  ,pixout32[15:8] };
+  endcase
   
   case ({vga_scale_x,vga_colormode})
     4'b0000: counter_scanout_step <= 3;
@@ -369,12 +336,6 @@ linebuf   pixout32    pixout8       palout        pixout
       counter_subpixel <= counter_subpixel - 1'b1;
   end
   
-  case (vga_colormode)
-    CMODE_8BIT:  pixout <= palout;
-    CMODE_16BIT: pixout <= pixout32_dly;
-    CMODE_32BIT: pixout <= pixout32_dly2;
-  endcase
-  
   pixout32 <= line_buffer[counter_scanout];
   
   if (vga_colormode==CMODE_16BIT)
@@ -385,7 +346,12 @@ linebuf   pixout32    pixout8       palout        pixout
   
   palout <= palette[pixout8];
   
-  //dvi_rgb <= line_buffer[counter_scanout]; //pixout;
+  case (vga_colormode)
+    CMODE_8BIT:  pixout <= palout;
+    CMODE_16BIT: pixout <= pixout32_dly;
+    CMODE_32BIT: pixout <= pixout32_dly2;
+  endcase
+  
   dvi_rgb <= pixout;
   
   if (vga_reset) begin
@@ -403,7 +369,7 @@ linebuf   pixout32    pixout8       palout        pixout
   end
   
   if (counter_y<vga_v_rez-1) begin
-    if (counter_x>vga_h_rez-vga_fetch_threshold)  // FIXME was fetch_threshold
+    if (counter_x>vga_h_rez-vga_fetch_threshold)
       need_line_fetch <= counter_y + 1'b1;
   end else
     need_line_fetch <= 0;
@@ -417,8 +383,6 @@ linebuf   pixout32    pixout8       palout        pixout
     dvi_vsync <= 1;
   else
     dvi_vsync <= 0;
-  
-  //vga_w2 <= (vga_h_rez+vga_fetch_threshold);
   
   if (counter_x>=4 && counter_x<vga_h_rez+4 && counter_y<vga_v_rez) begin
     dvi_active_video <= 1;
