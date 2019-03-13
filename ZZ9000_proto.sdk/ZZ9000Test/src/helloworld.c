@@ -152,7 +152,7 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 	XAxiVdma_Config *Config;
 
     // FIXME workaround for "scrolling" problem
-    if (vsize==1024 || (hdiv==1 && (vsize==480 || vsize==720 || vsize==600 || vsize==768))) {
+    if (vsize==1024 || (hdiv==1 && (vsize==480 || vsize==720 || vsize==600 || vsize==768 || vsize==1080))) {
     	vsize--;
     }
 
@@ -717,7 +717,7 @@ int main()
 					} else if (zdata==4) {
 					    video_system_init(1280, 1024, 1688, 1066, 108, 60, hdiv, vdiv);
 					} else if (zdata==5) {
-					    video_system_init(1920, 1080, 2200, 1125, 150, 60, hdiv, vdiv);
+					    video_system_init(1920, 1080, 2640, 1125, 150, 50, hdiv, vdiv);
 					} else {
 						printf("error: unknown mode\n");
 					}
