@@ -152,9 +152,9 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 	XAxiVdma_Config *Config;
 
     // FIXME workaround for "scrolling" problem
-    if (vsize==1024 || vsize==1080 || (hdiv==1 && (vsize==480 || vsize==720 || vsize==600 || vsize==768))) {
-    	vsize--;
-    }
+    //if (vsize==1024 || vsize==1080 || (hdiv==1 && (vsize==480 || vsize==720 || vsize==600 || vsize==768))) {
+    //	vsize--;
+    //}
 
 	Config = XAxiVdma_LookupConfig(VDMA_DEVICE_ID);
 

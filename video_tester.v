@@ -368,7 +368,7 @@ always @(posedge dvi_clk) begin
     counter_x <= counter_x + 1'b1;
   end
   
-  if (counter_y<vga_v_rez-1) begin
+  if (counter_y<vga_v_rez/*-1*/) begin
     if (counter_x>vga_h_rez-vga_fetch_threshold)
       need_line_fetch <= counter_y + 1'b1;
   end else
@@ -384,7 +384,7 @@ always @(posedge dvi_clk) begin
   else
     dvi_vsync <= 0;
   
-  if (counter_x>=4 && counter_x<vga_h_rez+4 && counter_y<vga_v_rez) begin
+  if (counter_x>4 && counter_x<vga_h_rez+4 && counter_y<vga_v_rez) begin
     dvi_active_video <= 1;
   end else begin
     dvi_active_video <= 0;

@@ -1025,10 +1025,10 @@ module MNTZorro_v0_1_S00_AXI
           ZORRO3 <= 0;
           zorro_state <= Z2_CONFIGURING;
         end
-        if (z3addr_autoconfig) begin
+        /*if (z3addr_autoconfig) begin
           ZORRO3 <= 1;
           zorro_state <= Z3_CONFIGURING;
-        end
+        end*/
       end
       
       Z2_CONFIGURING: begin
