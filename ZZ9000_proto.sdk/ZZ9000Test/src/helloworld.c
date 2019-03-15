@@ -474,7 +474,7 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 
 int main()
 {
-	char* zstates[42] = {
+	char* zstates[44] = {
 		"RESET   ",
 		"Z2_CONF ",
 		"Z2_IDLE ",
@@ -516,6 +516,8 @@ int main()
 		"NONE_38",
 		"RESET_DVID",
 		"COLD",
+		"WR2B",
+		"WR2C",
 		"UNDEF"
 	};
 
@@ -579,22 +581,25 @@ int main()
     uint32_t blitter_colormode=MNTVA_COLOR_32BIT;
     uint16_t hdiv=1, vdiv=2;
 
+    uint16_t old_zstate=0;
+
+    u32 zstate_raw;
+
     while(1) {
 		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
+		zstate_raw = zstate;
 		//u32 zdebug = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
 
         u32 writereq   = (zstate&(1<<31));
         u32 readreq    = (zstate&(1<<30));
-        u32 upper_byte = (zstate&(1<<29));
-        u32 lower_byte = (zstate&(1<<28));
 
-        zstate = zstate&0xf;
-        if (zstate>40) zstate=41;
+        zstate = zstate&0xff;
+        if (zstate>43) zstate=43;
 
         //printf("%d\n",zdebug);
 
         /*if (zstate!=old_zstate) {
-        	printf("addr: %08lx data: %04lx %s %s %s %s strb: %lx%lx%lx%lx %ld %s\r\n",zaddr,zdata,
+        	printf("addr: %08lx data: %04lx %s %s %s %s strb: %lx%lx%lx%lx %ld %s\r\n",0,0,
     			(zbits&(1<<8))?"   ":"RST",
     			(zbits&(1<<5))?"RD":"  ",
 				(zbits&(1<<6))?"   ":"CCS",
@@ -607,16 +612,24 @@ int main()
 				zstate_orig,
 				zstates[zstate]);*/
 
-		//if (zstate!=old_zstate) {
-		//	uint32_t zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
-		//	printf("ZSTA: %s wr: %d rd: %d cfgi: %d ac: %d addr: %08lx\n", zstates[zstate],!!writereq,!!readreq,!!zncfgin,!!autoconf,zaddr);
-		//}
+		/*if (zstate!=old_zstate) {
+	        u32 z3 = (zstate_raw&(1<<25));
+			uint32_t z3addr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
+			printf("ZSTA: %s (%08lx) z3: %d wr: %d rd: %d addr: %08lx\n", zstates[zstate], zstate_raw, !!z3, !!writereq, !!readreq, z3addr);
+			old_zstate=zstate;
+		}*/
 
 		if (!need_req_ack && writereq) {
 			u32 zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
 			u32 zdata  = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET);
 			//uint32_t count_writes = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
-			//printf("WRTE %08lx <- %08lx [%d%d]\n",zaddr,zdata,upper_byte,lower_byte);
+
+	        u32 ds3 = (zstate_raw&(1<<29));
+	        u32 ds2 = (zstate_raw&(1<<28));
+	        u32 ds1 = (zstate_raw&(1<<27));
+	        u32 ds0 = (zstate_raw&(1<<26));
+
+			//printf("WRTE %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
 
 			if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
 				// register area
@@ -746,10 +759,18 @@ int main()
 			else if (zaddr>=MNT_FB_BASE) {
 				u32 addr = zaddr-MNT_FB_BASE;
 			    //addr ^= 2ul; // swap words (BE -> LE)
+		        u32 z3 = (zstate_raw&(1<<25));
 
-			    // swap bytes
-				if (upper_byte) mem[addr]   = zdata>>8;
-				if (lower_byte) mem[addr+1] = zdata;
+				if (z3) {
+					if (ds3) mem[addr]   = zdata>>24;
+					if (ds2) mem[addr+1] = zdata>>16;
+					if (ds1) mem[addr+2] = zdata>>8;
+					if (ds0) mem[addr+3] = zdata;
+				} else {
+					// swap bytes
+					if (ds1) mem[addr]   = zdata>>8;
+					if (ds0) mem[addr+1] = zdata;
+				}
 			}
 
 			// ack the write
@@ -763,11 +784,19 @@ int main()
 			if (zaddr>=MNT_FB_BASE) {
 				u32 addr = zaddr-MNT_FB_BASE;
 			    //addr ^= 2ul; // swap words (BE -> LE)
+		        u32 z3 = (zstate_raw&(1<<25));
+				if (z3) {
+					u32 b1 = mem[addr]<<24;
+					u32 b2 = mem[addr+1]<<16;
+					u32 b3 = mem[addr+2]<<8;
+					u32 b4 = mem[addr+3];
 
-			    u16 ubyte = mem[addr]<<8;
-			    u16 lbyte = mem[addr+1];
-
-			    MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, ubyte|lbyte);
+					MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, b1|b2|b3|b4);
+				} else {
+					u16 ubyte = mem[addr]<<8;
+					u16 lbyte = mem[addr+1];
+					MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, ubyte|lbyte);
+				}
 			}
 
 			// ack the read
