@@ -629,10 +629,22 @@ int main()
 	        u32 ds1 = (zstate_raw&(1<<27));
 	        u32 ds0 = (zstate_raw&(1<<26));
 
-			//printf("WRTE %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
-
 			if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
 				// register area
+
+		        u32 z3 = (zstate_raw&(1<<25));
+				if (z3) {
+					// convert 32bit to 16bit addresses
+					if (ds3 && ds2) {
+						zdata=zdata>>16;
+					}
+					else if (ds1 && ds0) {
+						zdata=zdata&0xffff;
+						zaddr+=2;
+					}
+				}
+				//printf("WRTE %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
+
 
 				// PANNING
 				if (zaddr==MNT_BASE_PAN_HI) framebuffer_pan_offset=zdata<<16;
