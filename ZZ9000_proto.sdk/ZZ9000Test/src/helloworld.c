@@ -588,8 +588,6 @@ int main()
     while(1) {
 		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
 		zstate_raw = zstate;
-		//u32 zdebug = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
-
         u32 writereq   = (zstate&(1<<31));
         u32 readreq    = (zstate&(1<<30));
 
@@ -619,7 +617,7 @@ int main()
 			old_zstate=zstate;
 		}*/
 
-		if (!need_req_ack && writereq) {
+		if (writereq) {
 			u32 zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
 			u32 zdata  = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET);
 			//uint32_t count_writes = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
@@ -629,7 +627,12 @@ int main()
 	        u32 ds1 = (zstate_raw&(1<<27));
 	        u32 ds0 = (zstate_raw&(1<<26));
 
-			if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
+			//printf("WRTE %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
+
+			if (zaddr>0x10000000) {
+				printf("ERRW illegal address\n");
+			}
+			else if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
 				// register area
 
 		        u32 z3 = (zstate_raw&(1<<25));
@@ -643,8 +646,6 @@ int main()
 						zaddr+=2;
 					}
 				}
-				//printf("WRTE %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
-
 
 				// PANNING
 				if (zaddr==MNT_BASE_PAN_HI) framebuffer_pan_offset=zdata<<16;
@@ -677,7 +678,7 @@ int main()
 				else if (zaddr==MNT_BASE_RECTOP+0x12) {
 					// fill rectangle
 
-					//printf("rectfill: %d %d %d %d %08lx\n",rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
+					//printf("FILL: %d %d %d %d %08lx\n",rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
 
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
 
@@ -733,7 +734,7 @@ int main()
 				}
 
 				else if (zaddr==MNT_BASE_MODE) {
-					printf("mode change: %d\n",zdata);
+					//printf("mode change: %d\n",zdata);
 					// https://github.com/Xilinx/embeddedsw/blob/master/XilinxProcessorIPLib/drivers/vtc/src/xvtc.c
 
 					if (zdata==0) {
@@ -789,11 +790,14 @@ int main()
 			MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<31));
 			need_req_ack = 1;
 		}
-		else if (!need_req_ack && readreq) {
+		else if (readreq) {
 			uint32_t zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
 			//printf("READ addr: %08lx\n",zaddr);
 
-			if (zaddr>=MNT_FB_BASE) {
+			if (zaddr>0x10000000) {
+				printf("ERRR illegal address %08lx\n",zaddr);
+			}
+			else if (zaddr>=MNT_FB_BASE) {
 				u32 addr = zaddr-MNT_FB_BASE;
 			    //addr ^= 2ul; // swap words (BE -> LE)
 		        u32 z3 = (zstate_raw&(1<<25));
@@ -813,10 +817,21 @@ int main()
 
 			// ack the read
 			MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<30));
-			need_req_ack = 1;
+			need_req_ack = 2;
 		}
 
-        if (need_req_ack && !writereq && !readreq) {
+		// TODO: potential hang, timeout?
+        if (need_req_ack /*&& !writereq && !readreq*/) {
+        	//if (need_req_ack==1) {
+        	//	printf("write ack\n");
+        	//}
+        	while (1) {
+        		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
+                u32 writereq   = (zstate&(1<<31));
+                u32 readreq    = (zstate&(1<<30));
+                if (need_req_ack==1 && !writereq) break;
+                if (need_req_ack==2 && !readreq) break;
+        	}
     		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, 0);
     		need_req_ack = 0;
         }
