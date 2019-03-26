@@ -37,7 +37,7 @@ module video_tester(
   // control inputs for setting palette, width/height, scaling
   input [31:0] control_data,
   input [7:0] control_op,
-  output reg [7:0] dbg_state
+  input control_interlace
 );
 
 localparam OP_COLORMODE=1;
@@ -49,28 +49,49 @@ localparam OP_MAX=6;
 localparam OP_HS=7;
 localparam OP_VS=8;
 localparam OP_THRESH=9;
+localparam OP_POLARITY=10;
 
 localparam CMODE_8BIT=0;
 localparam CMODE_16BIT=1;
 localparam CMODE_32BIT=2;
 localparam CMODE_15BIT=4;
 
-reg [15:0] screen_width = 1280;
-reg [15:0] screen_height = 720;
+reg [15:0] screen_width = 720;
+reg [15:0] screen_height = 576;
 reg scale_x = 0;
-reg scale_y = 0; // amiga boots in 640x256, so double the resolution vertically
+reg scale_y = 1; // amiga boots in 640x256, so double the resolution vertically
 reg [31:0] palette[255:0];
 reg [2:0] colormode = CMODE_32BIT;
 reg vsync_request = 0;
 reg [3:0] div_x = 0;
 reg [15:0] fetch_threshold = 0; // account for pipeline delay
+reg sync_polarity = 1; // negative polarity
 
-reg [15:0] screen_h_max = 1980;
+/*reg [15:0] screen_h_max = 1980;
 reg [15:0] screen_v_max = 750;
 reg [15:0] screen_h_sync_start = 1720;
 reg [15:0] screen_h_sync_end = 1760;
 reg [15:0] screen_v_sync_start = 725;
-reg [15:0] screen_v_sync_end = 730;
+reg [15:0] screen_v_sync_end = 730;*/
+/*reg [15:0] screen_h_max = 1056;
+reg [15:0] screen_v_max = 628;
+reg [15:0] screen_h_sync_start = 840;
+reg [15:0] screen_h_sync_end = 968;
+reg [15:0] screen_v_sync_start = 601;
+reg [15:0] screen_v_sync_end = 605;*/
+/*reg [15:0] screen_h_max = 800;
+reg [15:0] screen_v_max = 525;
+reg [15:0] screen_h_sync_start = 656;
+reg [15:0] screen_h_sync_end = 752;
+reg [15:0] screen_v_sync_start = 490;
+reg [15:0] screen_v_sync_end = 492;*/
+
+reg [15:0] screen_h_max = 864;
+reg [15:0] screen_v_max = 625;
+reg [15:0] screen_h_sync_start = 732;
+reg [15:0] screen_h_sync_end = 796;
+reg [15:0] screen_v_sync_start = 581;
+reg [15:0] screen_v_sync_end = 586;
 
 localparam MAXWIDTH=1280;
 reg [31:0] line_buffer[MAXWIDTH-1:0];
@@ -113,6 +134,8 @@ wire pixin_valid = m_axis_vid_tvalid;
 wire pixin_end_of_line = m_axis_vid_tlast;
 wire pixin_framestart = m_axis_vid_tuser[0];
 
+reg scale_y_effective;
+
 always @(posedge m_axis_vid_aclk)
   begin
     if (~aresetn) begin
@@ -121,10 +144,11 @@ always @(posedge m_axis_vid_aclk)
       inptr <= 0;
     end
     
-    //dbg_state <= input_state;
     input_state <= next_input_state;
     need_line_fetch_reg <= need_line_fetch;
-    need_line_fetch_reg2 <= need_line_fetch_reg>>scale_y; // line duplication
+    need_line_fetch_reg2 <= need_line_fetch_reg>>scale_y_effective; // line duplication
+    
+    scale_y_effective <= control_interlace ? 0 : scale_y;
     
     cur_x <= counter_x;
     cur_y <= counter_y;
@@ -136,16 +160,6 @@ always @(posedge m_axis_vid_aclk)
     endcase
     screen_width_shifted <= (screen_width>>div_x)>>scale_x;
     
-    /*pixin <= m_axis_vid_tdata;
-    pixin_valid <= m_axis_vid_tvalid;
-    pixin_framestart <= m_axis_vid_tuser[0];
-    pixin_end_of_line <= m_axis_vid_tlast;*/
-    
-    /*pixin_valid_reg <= pixin_valid;
-    pixin_framestart_reg <= pixin_framestart;
-    pixin_end_of_line_reg <= pixin_end_of_line;
-    inptr_dly <= inptr;*/
-
     if (pixin_valid && ready_for_vdma) begin
       line_buffer[inptr] <= pixin; //pattern[inptr];
       // disabling this makes the picture go wild
@@ -201,6 +215,7 @@ always @(posedge m_axis_vid_aclk)
 
 reg [31:0] control_data_in;
 reg [7:0] control_op_in;
+reg control_interlace_in;
 
 // control input
 always @(posedge m_axis_vid_aclk)
@@ -208,19 +223,30 @@ begin
 
   control_op_in <= control_op;
   control_data_in <= control_data;
+  control_interlace_in <= control_interlace;
+  
+  if (input_state==0) begin
+    vsync_request <= 0;
+  end
+  
+  if (control_interlace_in != control_interlace) begin
+    vsync_request <= 1;
+  end
   
   case (control_op_in)
     OP_PALETTE: palette[control_data_in[31:24]] <= control_data_in[23:0];
     OP_DIMENSIONS: begin
         screen_height <= control_data_in[31:16];
         screen_width  <= control_data_in[15:0];
+        vsync_request <= 1;
       end
     OP_SCALE: begin
         scale_x  <= control_data_in[0];
         scale_y  <= control_data_in[1];
+        vsync_request <= 1;
       end
     OP_COLORMODE: colormode  <= control_data_in[1:0];
-    OP_VSYNC: vsync_request <= control_data[0];
+    OP_VSYNC: vsync_request <= 1; //control_data[0];
     OP_MAX: begin
         screen_v_max <= control_data_in[31:16];
         screen_h_max <= control_data_in[15:0];
@@ -235,6 +261,9 @@ begin
       end
     OP_THRESH: begin
         fetch_threshold <= control_data_in[15:0];
+      end
+    OP_POLARITY: begin
+        sync_polarity <= control_data_in[0];
       end
   endcase
 end
@@ -269,9 +298,11 @@ reg [15:0] vga_w2 = 0;
 reg [3:0] counter_scanout_step = 0;
 reg [3:0] counter_subpixel = 0;
 
+reg vga_sync_polarity = 0;
+
 always @(posedge dvi_clk) begin
   vga_h_rez <= screen_width;
-  vga_v_rez <= screen_height;
+  vga_v_rez <= screen_height-control_interlace_in;
   vga_h_max <= screen_h_max;
   vga_v_max <= screen_v_max;
   vga_h_sync_start <= screen_h_sync_start;
@@ -281,6 +312,7 @@ always @(posedge dvi_clk) begin
   vga_scale_x <= scale_x;
   vga_colormode <= colormode;
   vga_fetch_threshold <= fetch_threshold;
+  vga_sync_polarity <= sync_polarity;
 
   /*
     pipelines:
@@ -375,14 +407,14 @@ always @(posedge dvi_clk) begin
     need_line_fetch <= 0;
   
   if (counter_x>=vga_h_sync_start && counter_x<vga_h_sync_end)
-    dvi_hsync <= 1;
+    dvi_hsync <= 1^vga_sync_polarity;
   else
-    dvi_hsync <= 0;
+    dvi_hsync <= 0^vga_sync_polarity;
     
   if (counter_y>=vga_v_sync_start && counter_y<vga_v_sync_end)
-    dvi_vsync <= 1;
+    dvi_vsync <= 1^vga_sync_polarity;
   else
-    dvi_vsync <= 0;
+    dvi_vsync <= 0^vga_sync_polarity;
   
   if (counter_x>4 && counter_x<vga_h_rez+4 && counter_y<vga_v_rez) begin
     dvi_active_video <= 1;
