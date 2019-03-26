@@ -117,7 +117,7 @@ module MNTZorro_v0_1_S00_AXI
   
   output reg [31:0] video_control_data,
   output reg [7:0]  video_control_op,
-  input wire [7:0] video_debug,
+  output reg video_control_interlace, 
   
 	 // User ports ends
 	 // Do not modify the ports beyond this line
@@ -936,7 +936,7 @@ module MNTZorro_v0_1_S00_AXI
   reg [9:0] videocap_save_line_done=1;
   reg [11:0] videocap_save_y=0;
   reg [11:0] videocap_save_y2=0;
-  reg [11:0] videocap_save_addr=0;
+  reg [31:0] videocap_save_addr=0;
   reg [3:0] videocap_save_state=0; // FIXME
   
   reg m00_axi_awready_reg;
@@ -962,14 +962,16 @@ module MNTZorro_v0_1_S00_AXI
     videocap_save_y2 <= (videocap_y2+videocap_yoffset);
     videocap_save_addr <= (videocap_save_y2*videocap_pitch)+videocap_save_x2;
     
+    video_control_interlace <= videocap_interlace;
+    
     if (videocap_mode) begin
       m00_axi_wstrb <= 4'b1111;
-      m00_axi_awaddr <= 'h110000+videocap_save_addr*4;
+      m00_axi_awaddr <= 'hf10000+videocap_save_addr*4; // FIXME select sane area and protect it
       if (videocap_save_x[0])
-        m00_axi_wdata  <= videocap_buf[videocap_save_x>>1];
-      else
         m00_axi_wdata  <= videocap_buf2[videocap_save_x>>1];
-    
+      else
+        m00_axi_wdata  <= videocap_buf[videocap_save_x>>1];
+      
       // save newly captured line
       case (videocap_save_state)
         0:
@@ -1429,6 +1431,7 @@ module MNTZorro_v0_1_S00_AXI
           'h02: video_control_data[15:0]  <= regdata_in[15:0];
           'h04: video_control_op[7:0]     <= regdata_in[7:0]; // FIXME
           'h06: videocap_mode <= regdata_in[0];
+          'h08: videocap_xoffset <= regdata_in;
         endcase
       end
       
@@ -1547,10 +1550,10 @@ module MNTZorro_v0_1_S00_AXI
         z3_ds2<=~znLDS_sync[2];
         z3_ds3<=~znUDS_sync[2];
         if (z3_ds0||z3_ds1||z3_ds2||z3_ds3) begin
-          if (z3_mapped_addr<'h10000 || videocap_mode)
+          //if (z3_mapped_addr<'h10000 || videocap_mode)
             zorro_state <= Z3_WRITE_UPPER;
-          else
-            zorro_state <= WAIT_WRITE_DMA_Z3;
+          //else
+          //  zorro_state <= WAIT_WRITE_DMA_Z3;
         end
       end
       
@@ -1621,7 +1624,7 @@ module MNTZorro_v0_1_S00_AXI
     out_reg0 <= ZORRO3 ? last_z3addr : last_addr;
     out_reg1 <= zorro_ram_write_data;
     out_reg2 <= last_z3addr;
-    out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_ram_write_bytes, ZORRO3, 17'b0, zorro_state};
+    out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_ram_write_bytes, ZORRO3, video_control_interlace, 16'b0, zorro_state};
   end
 
 	// Implement memory mapped register select and read logic generation
