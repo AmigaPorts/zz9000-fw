@@ -839,10 +839,11 @@ module MNTZorro_v0_1_S00_AXI
   reg [9:0] videocap_y2 = 0;
   reg [9:0] videocap_ymax = 0;
   reg [9:0] videocap_y3 = 0;
-  reg [9:0] videocap_voffset = 'h2a;
-  reg [9:0] videocap_prex = 'h42;
+  reg [9:0] videocap_voffset = 'h1e; //'h2a;
+  reg [9:0] videocap_prex_in = 'h2d; //'h42;
+  reg [9:0] videocap_prex = 'h2d; //'h42;
   reg [9:0] videocap_height = 'h200; //'h117; // 'h127;
-  reg [8:0] videocap_width = 320;
+  reg [8:0] videocap_width = 360; // 320
   
   parameter VCAPW = 399;
   reg [31:0] videocap_buf [0:VCAPW];
@@ -867,6 +868,8 @@ module MNTZorro_v0_1_S00_AXI
     videocap_rgbin <=  {VCAP_R5,VCAP_R4,VCAP_R3,VCAP_R2,4'b0000,
                         VCAP_G5,VCAP_G4,VCAP_G3,VCAP_G2,4'b0000,
                         VCAP_B5,VCAP_B4,VCAP_B3,VCAP_B2,4'b0000};
+                        
+    videocap_prex <= videocap_prex_in;
                        
     if (!videocap_mode) begin
       // do nothing
@@ -932,10 +935,10 @@ module MNTZorro_v0_1_S00_AXI
   reg [11:0] videocap_save_x2=0;
   reg [11:0] videocap_yoffset=0;
   reg [11:0] videocap_xoffset=0;
-  reg [11:0] videocap_pitch=640;
+  reg [11:0] videocap_pitch=720;
   reg [9:0] videocap_save_line_done=1;
   reg [11:0] videocap_save_y=0;
-  reg [11:0] videocap_save_y2=0;
+  reg [31:0] videocap_save_y2=0;
   reg [31:0] videocap_save_addr=0;
   reg [3:0] videocap_save_state=0; // FIXME
   
@@ -958,8 +961,8 @@ module MNTZorro_v0_1_S00_AXI
     m00_axi_awready_reg <= m00_axi_awready;
     m00_axi_wready_reg <= m00_axi_wready;
     
-    videocap_save_x2 <= (videocap_save_x+videocap_xoffset);
-    videocap_save_y2 <= (videocap_y2+videocap_yoffset);
+    videocap_save_x2 <= (videocap_save_x);
+    videocap_save_y2 <= (videocap_y2-videocap_voffset2);
     videocap_save_addr <= (videocap_save_y2*videocap_pitch)+videocap_save_x2;
     
     video_control_interlace <= videocap_interlace;
@@ -975,7 +978,7 @@ module MNTZorro_v0_1_S00_AXI
       // save newly captured line
       case (videocap_save_state)
         0:
-          if (videocap_save_line_done!=videocap_y2 && videocap_x>64) begin
+          if (videocap_save_line_done!=videocap_y2 && videocap_x>8) begin
             m00_axi_awvalid <= 1;
             m00_axi_wvalid <= 1;
             if (m00_axi_awready) begin
@@ -986,7 +989,7 @@ module MNTZorro_v0_1_S00_AXI
           m00_axi_awvalid <= 0;
           m00_axi_wvalid <= 0;
           videocap_save_x <= videocap_save_x + 1'b1;
-          if (videocap_save_x > 640) begin
+          if (videocap_save_x > 720) begin // FIXME was 640
             videocap_save_line_done <= videocap_y2;
             videocap_save_x <= 0;
           end
@@ -1431,7 +1434,7 @@ module MNTZorro_v0_1_S00_AXI
           'h02: video_control_data[15:0]  <= regdata_in[15:0];
           'h04: video_control_op[7:0]     <= regdata_in[7:0]; // FIXME
           'h06: videocap_mode <= regdata_in[0];
-          'h08: videocap_xoffset <= regdata_in;
+          'h08: videocap_prex_in <= regdata_in;
         endcase
       end
       
