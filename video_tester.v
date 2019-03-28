@@ -50,6 +50,7 @@ localparam OP_HS=7;
 localparam OP_VS=8;
 localparam OP_THRESH=9;
 localparam OP_POLARITY=10;
+localparam OP_RESET=11;
 
 localparam CMODE_8BIT=0;
 localparam CMODE_16BIT=1;
@@ -123,11 +124,6 @@ reg [15:0] last_line_fetch = 1;
 reg [15:0] screen_width_shifted = 0;
 reg [15:0] input_line = 0;
 reg [15:0] screen_height_cmp = 0;
-
-/*reg [31:0] pixin;
-reg pixin_valid = 0;
-reg pixin_end_of_line = 0;
-reg pixin_framestart = 0;*/
 
 wire [31:0] pixin = m_axis_vid_tdata;
 wire pixin_valid = m_axis_vid_tvalid;
@@ -265,6 +261,22 @@ begin
     OP_POLARITY: begin
         sync_polarity <= control_data_in[0];
       end
+    OP_RESET: begin
+        sync_polarity <= 1;
+        screen_h_max <= 864;
+        screen_v_max <= 625;
+        screen_h_sync_start <= 732;
+        screen_h_sync_end <= 796;
+        screen_v_sync_start <= 581;
+        screen_v_sync_end <= 586;
+        fetch_threshold <= 0;
+        vsync_request <= 1;
+        scale_x <= 0;
+        scale_y <= 1;
+        screen_width <= 720;
+        screen_height <= 576;
+        colormode <= CMODE_32BIT;
+      end
   endcase
 end
 
@@ -302,7 +314,7 @@ reg vga_sync_polarity = 0;
 
 always @(posedge dvi_clk) begin
   vga_h_rez <= screen_width;
-  vga_v_rez <= screen_height-control_interlace_in;
+  vga_v_rez <= screen_height; //-control_interlace_in; FIXME
   vga_h_max <= screen_h_max;
   vga_v_max <= screen_v_max;
   vga_h_sync_start <= screen_h_sync_start;

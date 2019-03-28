@@ -839,7 +839,7 @@ module MNTZorro_v0_1_S00_AXI
   reg [9:0] videocap_y2 = 0;
   reg [9:0] videocap_ymax = 0;
   reg [9:0] videocap_y3 = 0;
-  reg [9:0] videocap_voffset = 'h1e; //'h2a;
+  reg [9:0] videocap_voffset = 'h1a; //'h2a;
   reg [9:0] videocap_prex_in = 'h2d; //'h42;
   reg [9:0] videocap_prex = 'h2d; //'h42;
   reg [9:0] videocap_height = 'h200; //'h117; // 'h127;
@@ -989,7 +989,7 @@ module MNTZorro_v0_1_S00_AXI
           m00_axi_awvalid <= 0;
           m00_axi_wvalid <= 0;
           videocap_save_x <= videocap_save_x + 1'b1;
-          if (videocap_save_x > 720) begin // FIXME was 640
+          if (videocap_save_x > 722) begin // FIXME was 720
             videocap_save_line_done <= videocap_y2;
             videocap_save_x <= 0;
           end
@@ -1015,10 +1015,10 @@ module MNTZorro_v0_1_S00_AXI
       end
       
       RESET: begin
-        ram_low   <= 'h600000;
+        /*ram_low   <= 'h600000;
         ram_high  <= 'ha00000;
         reg_low   <= 'h601000;
-        reg_high  <= 'h602000;
+        reg_high  <= 'h602000;*/
         
         dataout_enable <= 0;
         dataout <= 0;
@@ -1026,15 +1026,21 @@ module MNTZorro_v0_1_S00_AXI
         z_ovr <= 0;
         z_confout <= 0;
         z3_confdone <= 0;
+        
         if (!z_reset)
           zorro_state <= DECIDE_Z2_Z3;
         
         count_writes <= 0;
         videocap_mode <= 1;
         last_z3addr <= 0;
+        
+        // RESET video controller
+        video_control_op <= 11;
       end
       
       DECIDE_Z2_Z3: begin
+        video_control_op <= 0;
+        
         /*if (zaddr_autoconfig) begin
           ZORRO3 <= 0;
           zorro_state <= Z2_CONFIGURING;
@@ -1619,6 +1625,11 @@ module MNTZorro_v0_1_S00_AXI
     end
     if (slv_reg0[30]==1'b1) begin
       zorro_ram_read_request <= 0;
+    end
+    // ARM video control
+    if (slv_reg2[31]==1'b1) begin
+      video_control_data <= slv_reg3[31:0];
+      video_control_op <= slv_reg2[7:0];
     end
     
     zorro_ram_read_flag <= slv_reg0[30];
