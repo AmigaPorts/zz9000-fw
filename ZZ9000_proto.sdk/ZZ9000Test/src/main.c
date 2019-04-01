@@ -12,6 +12,7 @@
 #include "xclk_wiz.h"
 
 #include "gfx.h"
+#include "ethernet.h"
 
 typedef u8 AddressType;
 #define IIC_DEVICE_ID	XPAR_XIICPS_0_DEVICE_ID
@@ -41,7 +42,7 @@ int hdmi_ctrl_write_byte(u8 addr, u8 value) {
 	buffer[1] = 0xff;
 	status = XIicPs_MasterRecvPolled(&Iic, buffer+1, 1, HDMI_I2C_ADDR);
 
-	printf("[hdmi] old value of 0x%0x: 0x%0x\n",addr,buffer[1]);
+	//printf("[hdmi] old value of 0x%0x: 0x%0x\n",addr,buffer[1]);
 	buffer[1] = value;
 
 
@@ -57,7 +58,7 @@ int hdmi_ctrl_write_byte(u8 addr, u8 value) {
 	buffer[1] = 0xff;
 	status = XIicPs_MasterRecvPolled(&Iic, buffer+1, 1, HDMI_I2C_ADDR);
 
-	printf("[hdmi] new value of 0x%x: 0x%x (should be 0x%x)\n",addr,buffer[1],value);
+	//printf("[hdmi] new value of 0x%x: 0x%x (should be 0x%x)\n",addr,buffer[1],value);
 
 	return status;
 }
@@ -159,9 +160,9 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 			vsize+=3;
 		}
 		else if (hdiv>1) {
-			if (!(vsize==768 && hdiv==2) && !(vsize==1080) && !(vsize==1024)) {
+			/*if (!(vsize==768 && hdiv==2) && !(vsize==1080) && !(vsize==1024)) {
 				vsize++;
-			}
+			}*/
 		}
 	}
 
@@ -291,7 +292,7 @@ void pixelclock_init(int mhz) {
 	u32 divide = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x208);
 	printf("divide: %lu\n", divide);
 	u32 muldiv = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x200);
-	printf("muldiv: %x\n", muldiv);
+	printf("muldiv: %lu\n", muldiv);
 
 	u32 mul = 11;
 	u32 div = 1;
@@ -389,7 +390,7 @@ void pixelclock_init(int mhz) {
 	divide = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x208);
 	printf("divide: %lu\n", divide);
 	muldiv = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x200);
-	printf("muldiv: %x\n", muldiv);
+	printf("muldiv: %lu\n", muldiv);
 }
 
 void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int vhz, int hdiv, int vdiv) {
@@ -525,12 +526,14 @@ int main()
     uint32_t blitter_colormode=MNTVA_COLOR_32BIT;
     uint16_t hdiv=1, vdiv=1;
 
-    uint16_t old_zstate=0;
-
     u32 zstate_raw;
     int interlace_old = 0;
 
     handle_amiga_reset();
+
+    printf("init_ethernet...\n");
+    init_ethernet();
+    printf("... init_ethernet done.\n");
 
     while(1) {
 		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
