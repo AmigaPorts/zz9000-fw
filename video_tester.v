@@ -51,6 +51,7 @@ localparam OP_VS=8;
 localparam OP_THRESH=9;
 localparam OP_POLARITY=10;
 localparam OP_RESET=11;
+localparam OP_MISC=12;
 
 localparam CMODE_8BIT=0;
 localparam CMODE_16BIT=1;
@@ -98,6 +99,8 @@ wire [31:0] pixin = m_axis_vid_tdata;
 
 reg scale_y_effective;
 
+reg vga_vsync_req_in;
+
 always @(posedge m_axis_vid_aclk)
   begin
     if (~aresetn) begin
@@ -126,6 +129,7 @@ always @(posedge m_axis_vid_aclk)
       4'h0: begin
           // wait for start of frame
           ready_for_vdma <= 1;
+          vga_vsync_req_in <= 1;
           if (pixin_framestart)
             next_input_state <= 4'h3;
         end
@@ -153,6 +157,7 @@ always @(posedge m_axis_vid_aclk)
       4'h3: begin
           // we are at frame start, wait for the first line of video output
           ready_for_vdma <= 0;
+          vga_vsync_req_in <= 0;
           
           if (need_line_fetch_reg2 == 0) begin
             next_input_state <= 4'h2;
@@ -207,7 +212,6 @@ begin
         screen_v_sync_end <= control_data_in[15:0];
       end
     OP_THRESH: begin
-      // retired
       end
     OP_POLARITY: begin
         sync_polarity <= control_data_in[0];
@@ -226,6 +230,9 @@ begin
         screen_width <= 720;
         screen_height <= 576;
         colormode <= CMODE_32BIT;
+      end
+    OP_MISC: begin
+        //vga_vsync_req_in <= control_data_in[0];
       end
   endcase
 end
@@ -259,6 +266,7 @@ wire [7:0] blue16  = {pixout16[15:11], pixout16[15:13]};
 reg [3:0] counter_scanout_step; // = 0;
 reg [3:0] counter_subpixel = 0;
 
+reg vga_vsync_request = 0;
 reg vga_sync_polarity = 0;
 
 always @(posedge dvi_clk) begin
@@ -273,6 +281,7 @@ always @(posedge dvi_clk) begin
   vga_scale_x <= scale_x;
   vga_colormode <= colormode;
   vga_sync_polarity <= sync_polarity;
+  vga_vsync_request <= vga_vsync_req_in;
   
   // FIXME there is some non-determinism in the relationship
   // between this process and the fetching process
@@ -351,6 +360,9 @@ always @(posedge dvi_clk) begin
   
   dvi_rgb <= pixout;
   
+  if (vga_vsync_request) begin
+    counter_x <= 0;
+  end else
   if (counter_x > vga_h_max) begin
     counter_x <= 0;
     if (counter_y > vga_v_max) begin
