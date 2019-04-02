@@ -26,7 +26,7 @@ module MNTZorro_v0_1_S00_AXI
   output wire ZORRO_DATADIR,
   output wire ZORRO_ADDRDIR,
   
-  input wire ZORRO_READ,        
+  input wire ZORRO_READ,
   input wire ZORRO_NMTCR,
   input wire ZORRO_NUDS,
   input wire ZORRO_NLDS,
@@ -1015,11 +1015,6 @@ module MNTZorro_v0_1_S00_AXI
       end
       
       RESET: begin
-        /*ram_low   <= 'h600000;
-        ram_high  <= 'ha00000;
-        reg_low   <= 'h601000;
-        reg_high  <= 'h602000;*/
-        
         dataout_enable <= 0;
         dataout <= 0;
         slaven <= 0;
