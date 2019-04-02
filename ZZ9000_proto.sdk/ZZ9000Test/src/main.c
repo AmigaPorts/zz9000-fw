@@ -151,21 +151,6 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 	int status;
 	XAxiVdma_Config *Config;
 
-    // FIXME workaround for "scrolling" problem
-	if (vdiv==3) {
-		vsize+=2;
-	}
-	else {
-		if (hdiv>1 && vdiv>1) {
-			vsize+=3;
-		}
-		else if (hdiv>1) {
-			/*if (!(vsize==768 && hdiv==2) && !(vsize==1080) && !(vsize==1024)) {
-				vsize++;
-			}*/
-		}
-	}
-
 	Config = XAxiVdma_LookupConfig(VDMA_DEVICE_ID);
 
 	if (!Config) {
@@ -441,6 +426,8 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 #define MNT_BASE_HSIZE 		MNT_REG_BASE+0x34
 #define MNT_BASE_VSIZE 		MNT_REG_BASE+0x36
 
+#define MNT_BASE_ETH_TX		MNT_REG_BASE+0x80
+
 void handle_amiga_reset() {
     fb_fill();
 
@@ -531,9 +518,9 @@ int main()
 
     handle_amiga_reset();
 
-    printf("init_ethernet...\n");
+    /*printf("init_ethernet...\n");
     init_ethernet();
-    printf("... init_ethernet done.\n");
+    printf("... init_ethernet done.\n");*/
 
     while(1) {
 		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
@@ -740,6 +727,18 @@ int main()
 
 			if (zaddr>0x10000000) {
 				printf("ERRR illegal address %08lx\n",zaddr);
+			}
+			else if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
+				// read ARM "register"
+				/*if (z3) {
+					u32 b1 = mem[addr]<<24;
+					u32 b2 = mem[addr+1]<<16;
+					u32 b3 = mem[addr+2]<<8;
+					u32 b4 = mem[addr+3];
+
+					MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, b1|b2|b3|b4);
+				}*/
+				MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, 0);
 			}
 			else if (zaddr>=MNT_FB_BASE) {
 				u32 addr = zaddr-MNT_FB_BASE;
