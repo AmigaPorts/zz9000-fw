@@ -7,6 +7,7 @@
 #include "xparameters.h"
 #include <xemacps.h>
 #include <xscugic.h>
+#include "ethernet.h"
 
 static XEmacPs EmacPsInstance;
 static XScuGic IntcInstance;
@@ -42,8 +43,8 @@ static u32 TxFrameLength;
 
 typedef char EthernetFrame[XEMACPS_MAX_VLAN_FRAME_SIZE_JUMBO] __attribute__ ((aligned(64)));
 
-EthernetFrame TxFrame;		/* Transmit buffer */
-EthernetFrame RxFrame;		/* Receive buffer */
+char* TxFrame = (char*)TX_FRAME_ADDRESS;		/* Transmit buffer */
+char* RxFrame = (char*)RX_FRAME_ADDRESS;		/* Receive buffer */
 
 /*
  * Buffer descriptors are allocated in uncached memory. The memory is made
@@ -52,17 +53,8 @@ EthernetFrame RxFrame;		/* Receive buffer */
 #define RXBD_SPACE_BYTES XEmacPs_BdRingMemCalc(XEMACPS_BD_ALIGNMENT, RXBD_CNT)
 #define TXBD_SPACE_BYTES XEmacPs_BdRingMemCalc(XEMACPS_BD_ALIGNMENT, TXBD_CNT)
 
-/*
- * Buffer descriptors are allocated in uncached memory. The memory is made
- * uncached by setting the attributes appropriately in the MMU table.
- */
-#define RX_BD_LIST_START_ADDRESS	0x0FF00000
-#define TX_BD_LIST_START_ADDRESS	0x0FF70000
 
 #define FIRST_FRAGMENT_SIZE 64
-
-#define RXBD_CNT       32	/* Number of RxBDs to use */
-#define TXBD_CNT       32	/* Number of TxBDs to use */
 
 #define PHY_DETECT_REG1 2
 #define PHY_DETECT_REG2 3
@@ -272,7 +264,7 @@ int init_ethernet() {
 	 * The BDs need to be allocated in uncached memory. Hence the 1 MB
 	 * address range that starts at address 0xFF00000 is made uncached.
 	 */
-	Xil_SetTlbAttributes(0x0FF00000, 0xc02);
+	Xil_SetTlbAttributes(RX_BD_LIST_START_ADDRESS, 0xc02);
 
 	XEmacPs_BdClear(&BdTemplate);
 
@@ -331,7 +323,7 @@ int init_ethernet() {
 		printf("EMAC: Error allocating RxBD\n");
 		return XST_FAILURE;
 	}
-	XEmacPs_BdSetAddressRx(BdRxPtr, &RxFrame);
+	XEmacPs_BdSetAddressRx(BdRxPtr, RxFrame);
 	Status = XEmacPs_BdRingToHw(&(XEmacPs_GetRxRing(EmacPsInstancePtr)), 1, BdRxPtr);
 	if (Status != XST_SUCCESS) {
 		printf("EMAC: Error committing RxBD to HW\n");
@@ -346,6 +338,8 @@ int init_ethernet() {
 
 static void XEmacPsSendHandler(void *Callback)
 {
+	XEmacPs_Bd *BdTxPtr;
+
 	printf("EMAC: SEND!\n");
 
 	XEmacPs *EmacPsInstancePtr = (XEmacPs *) Callback;
@@ -353,19 +347,24 @@ static void XEmacPsSendHandler(void *Callback)
 	/*
 	 * Disable the transmit related interrupts
 	 */
-	XEmacPs_IntDisable(EmacPsInstancePtr, (XEMACPS_IXR_TXCOMPL_MASK | XEMACPS_IXR_TX_ERR_MASK));
+	/*XEmacPs_IntDisable(EmacPsInstancePtr, (XEMACPS_IXR_TXCOMPL_MASK | XEMACPS_IXR_TX_ERR_MASK));
 	if (GemVersion > 2) {
 		XEmacPs_IntQ1Disable(EmacPsInstancePtr, XEMACPS_INTQ1_IXR_ALL_MASK);
-	}
+	}*/
 	/*
 	 * Increment the counter so that main thread knows something
 	 * happened.
 	 */
 	FramesTx++;
+
+	XEmacPs_BdRingFromHwTx(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, &BdTxPtr);
+	XEmacPs_BdRingFree(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, BdTxPtr);
 }
 
 #define XEMACPS_BD_TO_INDEX(ringptr, bdptr)				\
 	(((u32)bdptr - (u32)(ringptr)->BaseBdAddr) / (ringptr)->Separation)
+
+static u16 frame_serial = 0;
 
 static void XEmacPsRecvHandler(void *Callback)
 {
@@ -377,6 +376,8 @@ static void XEmacPsRecvHandler(void *Callback)
 
 	//printf("EMAC: RECV %d rxring: %p\n", FramesRx, rxring);
 
+	frame_serial++;
+
 	int num_rx_bufs = XEmacPs_BdRingFromHwRx(rxring, 1, &rxbdset);
 	if (num_rx_bufs > 0) {
 		//printf("EMAC: num_rx_bufs %d\n", num_rx_bufs);
@@ -387,17 +388,22 @@ static void XEmacPsRecvHandler(void *Callback)
 			u32 bd_idx = XEMACPS_BD_TO_INDEX(rxring, cur_bd_ptr);
 			int rx_bytes = XEmacPs_BdGetLength(cur_bd_ptr);
 
-			printf("EMAC: RX: %d bd_idx: %d\n", rx_bytes, bd_idx);
+			printf("EMAC: RX: %d [%d] bd_idx: %d\n", frame_serial, rx_bytes, bd_idx);
 
-			Xil_DCacheInvalidateRange((UINTPTR)&RxFrame, sizeof(EthernetFrame));
+			Xil_DCacheInvalidateRange((UINTPTR)RxFrame, sizeof(EthernetFrame));
 
-			for (int i=0; i<rx_bytes; i++) {
+			// store size in big endian
+			*(RxFrame-4) = (rx_bytes&0xff00)>>8;
+			*(RxFrame-3) = (rx_bytes&0xff);
+			*(RxFrame-2) = (frame_serial&0xff00)>>8;
+			*(RxFrame-1) = (frame_serial&0xff);
+			/*for (int i=0; i<rx_bytes; i++) {
 				int y = i;
 				printf("%02x",RxFrame[y]);
 				if (y%4==3) printf(" ");
 				if (y%32==31) printf("\n");
 			}
-			printf("\n==========================================\n");
+			printf("\n==========================================\n");*/
 
 			cur_bd_ptr = XEmacPs_BdRingNext(rxring, cur_bd_ptr);
 		}
@@ -410,7 +416,7 @@ static void XEmacPsRecvHandler(void *Callback)
 		if (Status != XST_SUCCESS) {
 			printf("EMAC: Error allocating RxBD\n");
 		}
-		XEmacPs_BdSetAddressRx(rxbdset, &RxFrame);
+		XEmacPs_BdSetAddressRx(rxbdset, RxFrame);
 		XEmacPs_BdClearRxNew(rxbdset);
 
 	    XEmacPs_BdSetStatus(rxbdset, XEMACPS_RXBUF_WRAP_MASK);
@@ -876,4 +882,44 @@ static LONG EmacPsSetupIntrSystem(XScuGic *IntcInstancePtr, XEmacPs *EmacPsInsta
 
 	printf("GIC: Interrupts enabled\n");
 	return XST_SUCCESS;
+}
+
+void ethernet_send_frame(u16 frame_size) {
+	XEmacPs* EmacPsInstancePtr = &EmacPsInstance;
+	XEmacPs_Bd *BdTxPtr;
+
+	printf("ethernet_send_frame: %d\n",frame_size);
+
+	Xil_DCacheInvalidateRange((UINTPTR)TxFrame, sizeof(EthernetFrame));
+
+	for (int i=0; i<frame_size; i++) {
+		int y = i;
+		printf("%02x",TxFrame[y]);
+		if (y%4==3) printf(" ");
+		if (y%32==31) printf("\n");
+	}
+	printf("\n==========================================\n");
+
+	LONG Status = XEmacPs_BdRingAlloc(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, &BdTxPtr);
+
+	if (Status != XST_SUCCESS) {
+		printf("BdRingAlloc error: %ld\n",Status);
+	}
+
+	XEmacPs_BdSetAddressTx(BdTxPtr, TxFrame);
+	XEmacPs_BdSetLength(BdTxPtr, frame_size);
+	XEmacPs_BdClearTxUsed(BdTxPtr);
+	XEmacPs_BdSetLast(BdTxPtr);
+
+	dmb();
+	dsb();
+	Status = XEmacPs_BdRingToHw(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, BdTxPtr);
+	dmb();
+	dsb();
+
+	if (Status != XST_SUCCESS) {
+		printf("BdRingToHw error: %ld\n",Status);
+	}
+
+	XEmacPs_Transmit(EmacPsInstancePtr);
 }

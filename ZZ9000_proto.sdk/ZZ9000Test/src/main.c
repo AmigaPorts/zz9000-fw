@@ -518,9 +518,9 @@ int main()
 
     handle_amiga_reset();
 
-    /*printf("init_ethernet...\n");
+    printf("init_ethernet...\n");
     init_ethernet();
-    printf("... init_ethernet done.\n");*/
+    printf("... init_ethernet done.\n");
 
     while(1) {
 		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
@@ -698,6 +698,9 @@ int main()
 				}
 				else if (zaddr==MNT_BASE_VIDEOCAP_MODE) {
 					//videocap_mode=zdata;
+				}
+				else if (zaddr==MNT_BASE_ETH_TX) {
+					ethernet_send_frame(zdata);
 				}
 			}
 			else if (zaddr>=MNT_FB_BASE) {
