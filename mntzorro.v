@@ -7,6 +7,7 @@
 `define AUTOCONF_LOW  24'he80000
 `define AUTOCONF_HIGH 24'he80080
 `define Z3_RAM_SIZE 32'h10000000 // 256MB
+`define ARM_MEMORY_START 32'h100000
 
 `define C_M00_AXI_TARGET_SLAVE_BASE_ADDR 32'h10000000
 `define C_M00_AXI_ID_WIDTH   1
@@ -25,9 +26,12 @@ module MNTZorro_v0_1_S00_AXI
   
   output wire ZORRO_DATADIR,
   output wire ZORRO_ADDRDIR,
+  output wire ZORRO_ADDRDIR2,
+  output wire ZORRO_NBRN,
+  input  wire ZORRO_NBGN,
   
   input wire ZORRO_READ,
-  input wire ZORRO_NMTCR,
+  //input wire ZORRO_NMTCR,
   input wire ZORRO_NUDS,
   input wire ZORRO_NLDS,
   input wire ZORRO_NDS1,
@@ -38,27 +42,36 @@ module MNTZorro_v0_1_S00_AXI
   input wire ZORRO_NIORST,
   input wire ZORRO_NCFGIN,
   input wire ZORRO_E7M,
+  input wire ZORRO_C28D,
   
   input wire VCAP_VSYNC,
   input wire VCAP_HSYNC,
+  input wire VCAP_G0,
+  input wire VCAP_G1,
   input wire VCAP_G2,
   input wire VCAP_G3,
   input wire VCAP_G4,
   input wire VCAP_G5,
   input wire VCAP_G6,
   input wire VCAP_G7,
+  
   input wire VCAP_B7,
   input wire VCAP_B6,
   input wire VCAP_B5,
   input wire VCAP_B4,
   input wire VCAP_B3,
   input wire VCAP_B2,
+  input wire VCAP_B1,
+  input wire VCAP_B0,
+  
   input wire VCAP_R7,
   input wire VCAP_R6,
   input wire VCAP_R5,
   input wire VCAP_R4,
   input wire VCAP_R3,
   input wire VCAP_R2,
+  input wire VCAP_R1,
+  input wire VCAP_R0,
   
   output wire ZORRO_NCFGOUT,
   output wire ZORRO_NSLAVE,
@@ -595,6 +608,8 @@ module MNTZorro_v0_1_S00_AXI
   // level shifter direction pins
   assign ZORRO_DATADIR     = ZORRO_DOE & (dataout_enable | dataout_z3_latched); // d2-d9  d10-15, d0-d1
   assign ZORRO_ADDRDIR     = ZORRO_DOE & (dataout_z3_latched); // a16-a23 <- input  a8-a15 <- input
+  assign ZORRO_ADDRDIR2    = 0; //ZORRO_DOE & (dataout_z3_latched);
+  assign ZORRO_NBRN = 1; // TODO busmastering
   
   wire ZORRO_DATA_T = ~(ZORRO_DOE & (dataout_enable | dataout_z3_latched));
   wire ZORRO_ADDR_T = ~(ZORRO_DOE & dataout_z3_latched);
@@ -853,21 +868,17 @@ module MNTZorro_v0_1_S00_AXI
   reg videocap_ntsc=0;
   reg [9:0] videocap_voffset2=0;
   
-  // FIXME
-  wire VCAP_R1=0;
-  wire VCAP_R0=0;
-  wire VCAP_G1=0;
-  wire VCAP_G0=0;
-  wire VCAP_B1=0;
-  wire VCAP_B0=0;
-  
   always @(posedge ZORRO_E7M) begin
     videocap_hs <= {videocap_hs[8:0], VCAP_HSYNC};
     videocap_vs <= {videocap_vs[8:0], VCAP_VSYNC};
     
-    videocap_rgbin <=  {VCAP_R5,VCAP_R4,VCAP_R3,VCAP_R2,4'b0000,
+    /*videocap_rgbin <=  {VCAP_R5,VCAP_R4,VCAP_R3,VCAP_R2,4'b0000,
                         VCAP_G5,VCAP_G4,VCAP_G3,VCAP_G2,4'b0000,
-                        VCAP_B5,VCAP_B4,VCAP_B3,VCAP_B2,4'b0000};
+                        VCAP_B5,VCAP_B4,VCAP_B3,VCAP_B2,4'b0000};*/
+                        
+    videocap_rgbin <=  {VCAP_R7,VCAP_R6,VCAP_R5,VCAP_R4,VCAP_R3,VCAP_R2,VCAP_R1,VCAP_R0,
+                        VCAP_G7,VCAP_G6,VCAP_G5,VCAP_G4,VCAP_G3,VCAP_G2,VCAP_G1,VCAP_G0,
+                        VCAP_B7,VCAP_B6,VCAP_B5,VCAP_B4,VCAP_B3,VCAP_B2,VCAP_B1,VCAP_B0};
                         
     videocap_prex <= videocap_prex_in;
                        
@@ -912,22 +923,30 @@ module MNTZorro_v0_1_S00_AXI
         videocap_y2 <= videocap_y2 + 1'b1;
     end else if (videocap_x<VCAPW) begin
       videocap_x <= videocap_x + 1'b1;
-      videocap_buf[videocap_x-videocap_prex] <= {8'b0,videocap_rgbin};
+      videocap_buf2[videocap_x-videocap_prex] <= {8'b0,videocap_rgbin};
     end
   end
     
   always @(negedge ZORRO_E7M) begin
-    videocap_rgbin2 <= {VCAP_R5,VCAP_R4,VCAP_R3,VCAP_R2,4'b0000,
+    /*videocap_rgbin2 <= {VCAP_R5,VCAP_R4,VCAP_R3,VCAP_R2,4'b0000,
                         VCAP_G5,VCAP_G4,VCAP_G3,VCAP_G2,4'b0000,
-                        VCAP_B5,VCAP_B4,VCAP_B3,VCAP_B2,4'b0000};
+                        VCAP_B5,VCAP_B4,VCAP_B3,VCAP_B2,4'b0000};*/
+                        
+    videocap_rgbin2 <= {VCAP_R7,VCAP_R6,VCAP_R5,VCAP_R4,VCAP_R3,VCAP_R2,VCAP_R1,VCAP_R0,
+                        VCAP_G7,VCAP_G6,VCAP_G5,VCAP_G4,VCAP_G3,VCAP_G2,VCAP_G1,VCAP_G0,
+                        VCAP_B7,VCAP_B6,VCAP_B5,VCAP_B4,VCAP_B3,VCAP_B2,VCAP_B1,VCAP_B0};
                          
+    /*videocap_rgbin2 <=  {VCAP_B7,VCAP_B6,VCAP_B5,VCAP_B4,VCAP_B3,VCAP_B2,VCAP_B1,VCAP_B0,
+                        VCAP_G7,VCAP_G6,VCAP_G5,VCAP_G4,VCAP_G3,VCAP_G2,VCAP_G1,VCAP_G0,
+                        VCAP_R7,VCAP_R6,VCAP_R5,VCAP_R4,VCAP_R3,VCAP_R2,VCAP_R1,VCAP_R0};*/
+                        
     if (!videocap_mode) begin
       // do nothing
     end else if (videocap_hs[6:1]=='b000111) begin
       videocap_x2 <= 0;
     end else if (videocap_x2<VCAPW) begin
       videocap_x2 <= videocap_x2 + 1'b1;
-      videocap_buf2[videocap_x2-videocap_prex] <= videocap_rgbin2;
+      videocap_buf[videocap_x2-videocap_prex] <= videocap_rgbin2;
     end
   end
   
@@ -1181,12 +1200,14 @@ module MNTZorro_v0_1_S00_AXI
               casex (z3addr[15:0])
                 'hXX44: begin
                   z3_ram_low[31:16] <= zdata_in_sync;
+                  z_confout <= 1;
                   z3_confdone <= 1;
                 end
                 'hXX48: begin
                 end
                 'hXX4c: begin
                   // shutup
+                  z_confout <= 1;
                   z3_confdone <= 1;
                 end
               endcase
@@ -1348,7 +1369,7 @@ module MNTZorro_v0_1_S00_AXI
           m00_axi_wstrb <= {2'b0,zorro_write_capture_bytes[0],zorro_write_capture_bytes[1]};
         
         // FIXME
-        m00_axi_awaddr <= (last_addr+'h100000)&'hfffffc;
+        m00_axi_awaddr <= (last_addr+`ARM_MEMORY_START)&'h1fffffc;
         m00_axi_wdata  <= {zorro_write_capture_data[7:0],zorro_write_capture_data[15:8],zorro_write_capture_data[7:0],zorro_write_capture_data[15:8]};
         m00_axi_awvalid <= 1;
         m00_axi_wvalid  <= 1;
@@ -1576,7 +1597,7 @@ module MNTZorro_v0_1_S00_AXI
       WAIT_WRITE_DMA_Z3: begin
         m00_axi_wstrb <= {z3_ds0,z3_ds1,z3_ds2,z3_ds3};
         // FIXME
-        m00_axi_awaddr <= (z3_mapped_addr&'h1ffffffc)+'h100000; // max 256MB
+        m00_axi_awaddr <= (z3_mapped_addr&'h1ffffffc)+`ARM_MEMORY_START; // max 256MB
         m00_axi_wdata  <= {z3_din_low_s2[7:0],z3_din_low_s2[15:8],z3_din_high_s2[7:0],z3_din_high_s2[15:8]};
         m00_axi_awvalid <= 1;
         m00_axi_wvalid  <= 1;
