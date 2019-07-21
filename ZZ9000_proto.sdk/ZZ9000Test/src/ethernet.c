@@ -1,3 +1,7 @@
+#define ZZ_ENET
+
+#ifdef ZZ_ENET
+
 #include <stdio.h>
 #include "platform.h"
 #include <xil_printf.h>
@@ -27,18 +31,17 @@ static XScuGic IntcInstance;
 #define SLCR_UNLOCK_KEY_VALUE		0xDF0D
 #define SLCR_ADDR_GEM_RST_CTRL		(XPS_SYS_CTRL_BASEADDR + 0x214)
 
-#define EMACPS_LOOPBACK_SPEED    100	/* 100Mbps */
-#define EMACPS_LOOPBACK_SPEED_1G 1000	/* 1000Mbps */
-#define EMACPS_PHY_DELAY_SEC     4	/* Amount of time to delay waiting on
-					   PHY to reset */
+#define EMACPS_LOOPBACK_SPEED    100
+#define EMACPS_LOOPBACK_SPEED_1G 1000
+#define EMACPS_PHY_DELAY_SEC     4	//Amount of time to delay waiting on PHY to reset
 #define EMACPS_SLCR_DIV_MASK	0xFC0FC0FF
 
 static s32 GemVersion;
 static char EmacPsMAC[6] = {0xde,0xad,0xca,0xff,0xe2,0x42};
 
 static volatile s32 DeviceErrors = 0;
-static volatile s32 FramesTx = 0;
-static volatile s32 FramesRx = 0;
+static volatile u32 FramesTx = 0;
+static volatile u32 FramesRx = 0;
 static u32 TxFrameLength;
 
 typedef char EthernetFrame[XEMACPS_MAX_VLAN_FRAME_SIZE_JUMBO] __attribute__ ((aligned(64)));
@@ -262,7 +265,7 @@ int init_ethernet() {
 	// FIXME address space?
 	/*
 	 * The BDs need to be allocated in uncached memory. Hence the 1 MB
-	 * address range that starts at address 0xFF00000 is made uncached.
+	 * address range that starts at address 0x0FF00000 is made uncached.
 	 */
 	Xil_SetTlbAttributes(RX_BD_LIST_START_ADDRESS, 0xc02);
 
@@ -339,26 +342,31 @@ int init_ethernet() {
 static void XEmacPsSendHandler(void *Callback)
 {
 	XEmacPs_Bd *BdTxPtr;
-
-	printf("EMAC: SEND!\n");
-
 	XEmacPs *EmacPsInstancePtr = (XEmacPs *) Callback;
 
-	/*
-	 * Disable the transmit related interrupts
-	 */
-	/*XEmacPs_IntDisable(EmacPsInstancePtr, (XEMACPS_IXR_TXCOMPL_MASK | XEMACPS_IXR_TX_ERR_MASK));
-	if (GemVersion > 2) {
-		XEmacPs_IntQ1Disable(EmacPsInstancePtr, XEMACPS_INTQ1_IXR_ALL_MASK);
-	}*/
-	/*
-	 * Increment the counter so that main thread knows something
-	 * happened.
-	 */
-	FramesTx++;
+	u32 status = XEmacPs_ReadReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_TXSR_OFFSET);
+	XEmacPs_WriteReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_TXSR_OFFSET, status);
 
-	XEmacPs_BdRingFromHwTx(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, &BdTxPtr);
-	XEmacPs_BdRingFree(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, BdTxPtr);
+	printf("XEMACPS_TXSR status: %lu\n", status);
+
+	//if (status!=0) {
+		XEmacPs_BdRingFromHwTx(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, &BdTxPtr);
+		status = XEmacPs_BdRingFree(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, BdTxPtr);
+
+		if (status != XST_SUCCESS) {
+			printf("XEmacPs_BdRingFree error: %lu\n",status);
+		}
+
+		u32* bd=(u32*)BdTxPtr;
+		bd++;
+		*bd = XEMACPS_TXBUF_WRAP_MASK;
+		*bd |= XEMACPS_TXBUF_USED_MASK;
+		//dmb();
+		//dsb();
+	//} else {
+		// not sure what status 0 means, transmit complete?
+	//}
+	FramesTx++;
 }
 
 #define XEMACPS_BD_TO_INDEX(ringptr, bdptr)				\
@@ -372,7 +380,8 @@ static void XEmacPsRecvHandler(void *Callback)
 	XEmacPs_BdRing* rxring = &(XEmacPs_GetRxRing(EmacPsInstancePtr));
 	XEmacPs_Bd* rxbdset, *cur_bd_ptr;
 
-	//XEmacPs_IntDisable(EmacPsInstancePtr, (XEMACPS_IXR_FRAMERX_MASK | XEMACPS_IXR_RX_ERR_MASK));
+	u32 status = XEmacPs_ReadReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET);
+	XEmacPs_WriteReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET, status);
 
 	//printf("EMAC: RECV %d rxring: %p\n", FramesRx, rxring);
 
@@ -694,8 +703,7 @@ LONG setup_phy(XEmacPs * EmacPsInstancePtr, u32 Speed)
 #define ADVERTISE_100BASE4	0x0200  /* Try for 100mbps 4k packets  */
 
 
-#define ADVERTISE_100_AND_10	(ADVERTISE_10FULL | ADVERTISE_100FULL | \
-				ADVERTISE_10HALF | ADVERTISE_100HALF)
+#define ADVERTISE_100_AND_10	(ADVERTISE_10FULL | ADVERTISE_100FULL | ADVERTISE_10HALF | ADVERTISE_100HALF)
 #define ADVERTISE_100		(ADVERTISE_100FULL | ADVERTISE_100HALF)
 #define ADVERTISE_10		(ADVERTISE_10FULL | ADVERTISE_10HALF)
 
@@ -888,22 +896,24 @@ void ethernet_send_frame(u16 frame_size) {
 	XEmacPs* EmacPsInstancePtr = &EmacPsInstance;
 	XEmacPs_Bd *BdTxPtr;
 
-	printf("ethernet_send_frame: %d\n",frame_size);
+	u32 old_frames_tx = FramesTx;
+
+	printf("ethernet_send_frame: %lu %d\n",old_frames_tx,frame_size);
 
 	Xil_DCacheInvalidateRange((UINTPTR)TxFrame, sizeof(EthernetFrame));
 
-	for (int i=0; i<frame_size; i++) {
+	/*for (int i=0; i<frame_size; i++) {
 		int y = i;
 		printf("%02x",TxFrame[y]);
 		if (y%4==3) printf(" ");
 		if (y%32==31) printf("\n");
 	}
-	printf("\n==========================================\n");
+	printf("\n==========================================\n");*/
 
 	LONG Status = XEmacPs_BdRingAlloc(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, &BdTxPtr);
 
 	if (Status != XST_SUCCESS) {
-		printf("BdRingAlloc error: %ld\n",Status);
+		printf("ERROR: BdRingAlloc error: %ld\n",Status);
 	}
 
 	XEmacPs_BdSetAddressTx(BdTxPtr, TxFrame);
@@ -911,15 +921,29 @@ void ethernet_send_frame(u16 frame_size) {
 	XEmacPs_BdClearTxUsed(BdTxPtr);
 	XEmacPs_BdSetLast(BdTxPtr);
 
-	dmb();
-	dsb();
 	Status = XEmacPs_BdRingToHw(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, BdTxPtr);
-	dmb();
-	dsb();
 
 	if (Status != XST_SUCCESS) {
-		printf("BdRingToHw error: %ld\n",Status);
+		printf("ERROR: BdRingToHw error: %ld\n",Status);
 	}
 
+	Xil_DCacheFlushRange((UINTPTR)BdTxPtr, 128);
+
 	XEmacPs_Transmit(EmacPsInstancePtr);
+
+	XEmacPs_WriteReg(EmacPsInstance.Config.BaseAddress,
+		XEMACPS_NWCTRL_OFFSET,
+		XEmacPs_ReadReg(EmacPsInstance.Config.BaseAddress, XEMACPS_NWCTRL_OFFSET) |
+		XEMACPS_NWCTRL_STARTTX_MASK);
+
+	u32 counter = 0;
+	while (old_frames_tx == FramesTx) {
+		counter++;
+		if (counter>100000) {
+			printf("ERROR: timeout in ethernet_send_frame waiting for tx!\n");
+			break;
+		}
+	}
 }
+
+#endif

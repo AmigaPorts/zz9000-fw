@@ -78,9 +78,9 @@ localparam MAXWIDTH=1280; // 1920?!?
 reg [31:0] line_buffer[MAXWIDTH-1:0];
 
 // (input) vdma state
-(* mark_debug = "true" *) reg [3:0] next_input_state = 0;
-(* mark_debug = "true" *) reg [11:0] inptr = 0;
-(* mark_debug = "true" *) reg ready_for_vdma = 0;
+reg [3:0] next_input_state = 0;
+reg [11:0] inptr = 0;
+reg ready_for_vdma = 0;
 
 assign m_axis_vid_tready = ready_for_vdma;
 
@@ -88,14 +88,14 @@ reg [11:0] counter_x = 0; // vga domain
 reg [11:0] counter_y = 0; // vga domain
 reg [11:0] need_line_fetch = 0; // vga domain
 
-(* mark_debug = "true" *) reg [11:0] need_line_fetch_reg = 0;
-(* mark_debug = "true" *) reg [11:0] need_line_fetch_reg2 = 0;
-(* mark_debug = "true" *) reg [11:0] last_line_fetch = 1;
+reg [11:0] need_line_fetch_reg = 0;
+reg [11:0] need_line_fetch_reg2 = 0;
+reg [11:0] last_line_fetch = 1;
 
 wire [31:0] pixin = m_axis_vid_tdata;
-(* mark_debug = "true" *) wire pixin_valid = m_axis_vid_tvalid;
-(* mark_debug = "true" *) wire pixin_end_of_line = m_axis_vid_tlast;
-(* mark_debug = "true" *) wire pixin_framestart = m_axis_vid_tuser[0];
+wire pixin_valid = m_axis_vid_tvalid;
+wire pixin_end_of_line = m_axis_vid_tlast;
+wire pixin_framestart = m_axis_vid_tuser[0];
 
 reg scale_y_effective;
 
@@ -173,8 +173,8 @@ reg control_interlace_in;
 // control input
 always @(posedge m_axis_vid_aclk)
 begin
-  control_op_in <= control_op;
-  control_data_in <= control_data;
+  control_op_in        <= control_op;
+  control_data_in      <= control_data;
   control_interlace_in <= control_interlace;
   
   if (next_input_state==0) begin

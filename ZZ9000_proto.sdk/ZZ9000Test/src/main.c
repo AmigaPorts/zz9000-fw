@@ -1,9 +1,11 @@
 #include <stdio.h>
+#include <string.h>
+#include <malloc.h>
+#include <math.h>
 #include "platform.h"
 #include "xil_printf.h"
 #include "xparameters.h"
 #include "xil_io.h"
-#include "MNTZorro.h"
 
 #include "xiicps.h"
 #include "sleep.h"
@@ -13,12 +15,14 @@
 
 #include "gfx.h"
 #include "ethernet.h"
+#include "xgpiops.h"
 
 typedef u8 AddressType;
 #define IIC_DEVICE_ID	XPAR_XIICPS_0_DEVICE_ID
 #define VDMA_DEVICE_ID	XPAR_AXIVDMA_0_DEVICE_ID
 #define HDMI_I2C_ADDR 	0x3b
 #define IIC_SCLK_RATE	400000
+#define GPIO_DEVICE_ID		XPAR_XGPIOPS_0_DEVICE_ID
 
 #define MNTVA_COLOR_8BIT     0
 #define MNTVA_COLOR_16BIT565 1
@@ -28,6 +32,8 @@ typedef u8 AddressType;
 
 XIicPs Iic;
 
+#define I2C_PAUSE 10000
+
 int hdmi_ctrl_write_byte(u8 addr, u8 value) {
 	u8 buffer[2];
 	buffer[0] = addr;
@@ -35,14 +41,14 @@ int hdmi_ctrl_write_byte(u8 addr, u8 value) {
 	int status;
 
 	while (XIicPs_BusIsBusy(&Iic)) {};
-	usleep(2500);
+	usleep(I2C_PAUSE);
 	status = XIicPs_MasterSendPolled(&Iic, buffer, 1, HDMI_I2C_ADDR);
 	while (XIicPs_BusIsBusy(&Iic)) {};
-	usleep(2500);
+	usleep(I2C_PAUSE);
 	buffer[1] = 0xff;
 	status = XIicPs_MasterRecvPolled(&Iic, buffer+1, 1, HDMI_I2C_ADDR);
 
-	//printf("[hdmi] old value of 0x%0x: 0x%0x\n",addr,buffer[1]);
+	printf("[hdmi] old value of 0x%0x: 0x%0x\n",addr,buffer[1]);
 	buffer[1] = value;
 
 
@@ -50,15 +56,15 @@ int hdmi_ctrl_write_byte(u8 addr, u8 value) {
 	status = XIicPs_MasterSendPolled(&Iic, buffer, 2, HDMI_I2C_ADDR);
 
 	while (XIicPs_BusIsBusy(&Iic)) {};
-	usleep(2500);
+	usleep(I2C_PAUSE);
 	status = XIicPs_MasterSendPolled(&Iic, buffer, 1, HDMI_I2C_ADDR);
 
 	while (XIicPs_BusIsBusy(&Iic)) {};
-	usleep(2500);
+	usleep(I2C_PAUSE);
 	buffer[1] = 0xff;
 	status = XIicPs_MasterRecvPolled(&Iic, buffer+1, 1, HDMI_I2C_ADDR);
 
-	//printf("[hdmi] new value of 0x%x: 0x%x (should be 0x%x)\n",addr,buffer[1],value);
+	printf("[hdmi] new value of 0x%x: 0x%x (should be 0x%x)\n",addr,buffer[1],value);
 
 	return status;
 }
@@ -70,7 +76,7 @@ int hdmi_ctrl_read_byte(u8 addr, u8* buffer)
 	while (XIicPs_BusIsBusy(&Iic)) {};
 	int status = XIicPs_MasterSendPolled(&Iic, buffer, 1, HDMI_I2C_ADDR);
 	while (XIicPs_BusIsBusy(&Iic)) {};
-	usleep(2500);
+	usleep(I2C_PAUSE);
 	status = XIicPs_MasterRecvPolled(&Iic, buffer+1, 1, HDMI_I2C_ADDR);
 
 	return status;
@@ -99,18 +105,42 @@ static u8 sii9022_init[] = {
 	0x1a, 0x01, // DVI
 };
 
+void disable_reset_out() {
+	int Status;
+    XGpioPs Gpio;
+	XGpioPs_Config *ConfigPtr;
+	ConfigPtr = XGpioPs_LookupConfig(GPIO_DEVICE_ID);
+	Status = XGpioPs_CfgInitialize(&Gpio, ConfigPtr, ConfigPtr->BaseAddr);
+	int output_pin = 7;
+
+	XGpioPs_SetDirectionPin(&Gpio, output_pin, 1);
+	XGpioPs_SetOutputEnablePin(&Gpio, output_pin, 1);
+	XGpioPs_WritePin(&Gpio, output_pin, 0);
+	usleep(10000);
+	XGpioPs_WritePin(&Gpio, output_pin, 1);
+
+    print("GPIO reset disable done.\n\r");
+}
+
 void hdmi_ctrl_init() {
 	int status;
 	XIicPs_Config *config;
 	config = XIicPs_LookupConfig(IIC_DEVICE_ID);
 	status = XIicPs_CfgInitialize(&Iic, config, config->BaseAddress);
 	printf("XIicPs_CfgInitialize: %d\n", status);
-	status = XIicPs_SetSClk(&Iic, IIC_SCLK_RATE);
-	printf("XIicPs_SetSClk: %d\n", status);
+	usleep(10000);
+	printf("iicps is ready: %x\n", Iic.IsReady);
 
-	Xil_Out32(0xE000A000 + 0x244,0x00080000);
-	Xil_Out32(0xE000A000 + 0x248,0x00080000);
-	Xil_Out32(0xE000A000 + 0xC,0xFFF70008);
+	status = XIicPs_SelfTest(&Iic);
+	printf("XIicPs_SelfTest: %x\n", status);
+
+	status = XIicPs_SetSClk(&Iic, IIC_SCLK_RATE);
+	printf("XIicPs_SetSClk: %x\n", status);
+
+	// TODO what is this?
+	//Xil_Out32(XPAR_PS7_GPIO_0_BASEADDR + 0x244,0x00080000);
+	//Xil_Out32(XPAR_PS7_GPIO_0_BASEADDR + 0x248,0x00080000);
+	//Xil_Out32(XPAR_PS7_GPIO_0_BASEADDR + 0xC,0xFFF70008);
 	usleep(2500);
 
 	status = hdmi_ctrl_write_byte(0xc7,0);
@@ -157,11 +187,17 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 		printf("No video DMA found for ID %d\r\n", VDMA_DEVICE_ID);
 		return XST_FAILURE;
 	}
+
+	/*XAxiVdma_DmaStop(&vdma, XAXIVDMA_READ);
+	XAxiVdma_Reset(&vdma, XAXIVDMA_READ);
+	XAxiVdma_ClearDmaChannelErrors(&vdma, XAXIVDMA_READ, XAXIVDMA_SR_ERR_ALL_MASK);*/
+
 	status = XAxiVdma_CfgInitialize(&vdma, Config, Config->BaseAddress);
 	if (status != XST_SUCCESS) {
 		printf("Configuration Initialization failed, status: 0x%X\r\n", status);
-		return status;
+		//return status;
 	}
+
 	u32 stride = hsize * (Config->Mm2SStreamWidth>>3);
 
 	XAxiVdma_DmaSetup ReadCfg;
@@ -179,6 +215,8 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 	ReadCfg.FixedFrameStoreAddr = 0;      /* We are not doing parking */
 
 	ReadCfg.FrameStoreStartAddr[0] = (u32)framebuffer+framebuffer_pan_offset;
+
+	printf("framebuffer set to %x\n", ReadCfg.FrameStoreStartAddr[0]);
 
 	status = XAxiVdma_DmaConfig(&vdma, XAXIVDMA_READ, &ReadCfg);
 	if (status != XST_SUCCESS) {
@@ -259,8 +297,8 @@ u32 dump_vdma_status(XAxiVdma *InstancePtr)
 }
 
 void fb_fill() {
-	for (int i=0; i<1280*800; i++) {
-		framebuffer[i] = 0xffffffff;
+	for (int i=0; i<720*576; i++) {
+		framebuffer[i] = 0xff0000ff+i;
 	}
 }
 
@@ -378,6 +416,66 @@ void pixelclock_init(int mhz) {
 	printf("muldiv: %lu\n", muldiv);
 }
 
+
+#define MNTZORRO_S00_AXI_SLV_REG0_OFFSET 0
+#define MNTZORRO_S00_AXI_SLV_REG1_OFFSET 4
+#define MNTZORRO_S00_AXI_SLV_REG2_OFFSET 8
+#define MNTZORRO_S00_AXI_SLV_REG3_OFFSET 12
+
+#define MNTZORRO_mReadReg(BaseAddress, RegOffset) \
+    Xil_In32((BaseAddress) + (RegOffset))
+
+#define MNTZORRO_mWriteReg(BaseAddress, RegOffset, Data) \
+  	Xil_Out32((BaseAddress) + (RegOffset), (u32)(Data))
+
+void init_video_formatter(uint32_t base_addr, int colormode, int width, int height, int htotal, int vtotal, int hss, int hse, int vss, int vse, int polarity) {
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, colormode);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000001); // OP_COLORMODE
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, (vtotal<<16)|htotal);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000006); // OP_MAX (vmax | hmax)
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, (height<<16)|width);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000002); // OP_DIMENSIONS (height | width)
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, (hss<<16)|hse);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000007); // OP_HS (hsync_start | hsync_end)
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, (vss<<16)|vse);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000008); // OP_VS (vsync_start | vsync_end)
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, polarity);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf000000a); // OP_POLARITY
+	usleep(10000);
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
+	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
+}
+
+// FIXME!
+#define MNTZ_BASE_ADDR 0x43C00000
+
 void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int vhz, int hdiv, int vdiv) {
 
     printf("pixelclock_init()...\n");
@@ -386,9 +484,6 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
     printf("hdmi_ctrl_init()...\n");
     hdmi_ctrl_init();
 
-    //printf("init_vtc()...\n");
-    //init_vtc();
-
     printf("set_video_mode()...\n");
     set_video_mode(htotal, vtotal, mhz, vhz);
 
@@ -396,17 +491,29 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
     init_vdma(hres, vres, hdiv, vdiv);
     printf("done.\n");
 
-    usleep(10000);
+    // FIXME DEBUG ONLY
+    /*printf("init_video_formatter()...\n");
+    // 25.17 640 656 752 800 480 490 492 525
+    if (hres==640 && vres==480) {
+    	printf("640x480...\n");
+    	init_video_formatter(MNTZ_BASE_ADDR, 2, hres, vres, htotal, vtotal, 656, 752, 490, 492, 0);
+    }
+    if (hres==1280 && vres==720) {
+    	printf("1280x720...\n");
+    	init_video_formatter(MNTZ_BASE_ADDR, 2, hres, vres, htotal, vtotal, 1720, 1760, 725, 730, 0);
+    }
+    printf("done.\n");*/
 
-    //dump_vdma_status(&vdma);
-    //dump_vtc_status();
+    dump_vdma_status(&vdma);
 
     vmode_hsize = hres;
     vmode_vsize = vres;
-}
 
-// FIXME!
-#define MNTZ_BASE_ADDR 0x43C00000
+    /*while(1) {
+    	usleep(100000000);
+        dump_vdma_status(&vdma);
+    }*/
+}
 
 // Our address space is relative to the autoconfig base address (for example, it could be 0x600000)
 #define MNT_REG_BASE    0x000000
@@ -427,6 +534,29 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 #define MNT_BASE_VSIZE 		MNT_REG_BASE+0x36
 
 #define MNT_BASE_ETH_TX		MNT_REG_BASE+0x80
+#define MNT_BASE_RUN_HI		MNT_REG_BASE+0x90
+#define MNT_BASE_RUN_LO		MNT_REG_BASE+0x92
+#define MNT_BASE_RUN_ARG0   MNT_REG_BASE+0x94
+
+void testfunc() {
+	printf("testfunc!\n");
+}
+
+uint32_t mnt_alloc_ptr = 0x10000000;
+
+uint8_t* mnt_malloc(uint32_t size) {
+	uint8_t* res = (uint8_t*)mnt_alloc_ptr;
+	if (mnt_alloc_ptr+size>0x20000000) {
+		return 0;
+	}
+	mnt_alloc_ptr=(mnt_alloc_ptr+size+256)&0xffffff00;
+	printf("mnt_malloc %ld at %p\n",size,res);
+	return res;
+}
+
+void mnt_free(uint8_t* addr) {
+	// NYI
+}
 
 void handle_amiga_reset() {
     fb_fill();
@@ -440,13 +570,25 @@ void handle_amiga_reset() {
     printf("    / /__ / /__  / /| |_| | |_| | |_| |\n");
     printf("   /_____/_____|/_/  \\___/ \\___/ \\___/ \n\n");
 
+    /*printf("mnt_malloc = %p;\n",mnt_malloc);
+    printf("mnt_free = %p;\n",mnt_free);
+    printf("memset = %p;\n",memset);
+    printf("memcpy = %p;\n",memcpy);
+    printf("printf = %p;\n",printf);
+    printf("puts = %p;\n",puts);
+    printf("sin = %p;\n",sin);
+    printf("cos = %p;\n",cos);
+    printf("sqrt = %p;\n",sqrt);*/
+
+    // FIXME
     //video_system_init(640, 480, 800, 525, 25, 60, 1, 2);
-    video_system_init(720, 576, 864, 625, 27, 50, 1, 2);
+    video_system_init(720, 576, 864, 625, 27, 50, 1, 2); // <--- default
+    //video_system_init(1280, 720, 1980, 750, 75, 60, 1, 2);
 }
 
 int main()
 {
-	char* zstates[44] = {
+	char* zstates[49] = {
 		"RESET   ",
 		"Z2_CONF ",
 		"Z2_IDLE ",
@@ -490,11 +632,18 @@ int main()
 		"COLD",
 		"WR2B",
 		"WR2C",
-		"UNDEF"
+		"Z3DMA1",
+		"Z3DMA2",
+		"Z3_AUTOCONF_RD",
+		"Z3_AUTOCONF_WR",
+		"Z3_AUTOCONF_RD_DLY",
+		"UNDEF",
 	};
 
     init_platform();
     Xil_DCacheDisable();
+
+    disable_reset_out();
 
     framebuffer=(u32*)0x110000;
     int need_req_ack = 0;
@@ -512,15 +661,18 @@ int main()
     uint32_t rect_rgb=0;
     uint32_t blitter_colormode=MNTVA_COLOR_32BIT;
     uint16_t hdiv=1, vdiv=1;
+    uint32_t arm_run_address=0;
+    uint16_t arm_run_arg0=0;
 
+    u32 old_zstate;
     u32 zstate_raw;
     int interlace_old = 0;
 
     handle_amiga_reset();
 
-    printf("init_ethernet...\n");
-    init_ethernet();
-    printf("... init_ethernet done.\n");
+    //printf("init_ethernet...\n");
+    //init_ethernet();
+    //printf("... init_ethernet done.\n");
 
     while(1) {
 		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
@@ -529,7 +681,7 @@ int main()
         u32 readreq    = (zstate&(1<<30));
 
         zstate = zstate&0xff;
-        if (zstate>43) zstate=43;
+        if (zstate>48) zstate=48;
 
         //printf("%d\n",zdebug);
 
@@ -547,12 +699,14 @@ int main()
 				zstate_orig,
 				zstates[zstate]);*/
 
-		/*if (zstate!=old_zstate) {
+        //printf("addr: %08lx\r\n", MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET));
+
+		if (zstate!=old_zstate) {
 	        u32 z3 = (zstate_raw&(1<<25));
 			uint32_t z3addr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
 			printf("ZSTA: %s (%08lx) z3: %d wr: %d rd: %d addr: %08lx\n", zstates[zstate], zstate_raw, !!z3, !!writereq, !!readreq, z3addr);
 			old_zstate=zstate;
-		}*/
+		}
 
 		if (writereq) {
 			u32 zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
@@ -564,10 +718,12 @@ int main()
 	        u32 ds1 = (zstate_raw&(1<<27));
 	        u32 ds0 = (zstate_raw&(1<<26));
 
-			//printf("WRTE %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
+	        //if (!(ds3 && ds2) && !(ds1 && ds0)) {
+	        //	printf("ERR WRTE: %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
+	        //}
 
 			if (zaddr>0x10000000) {
-				printf("ERRW illegal address\n");
+				//printf("ERRW illegal address %p\n",zaddr);
 			}
 			else if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
 				// register area
@@ -582,7 +738,12 @@ int main()
 						zdata=zdata&0xffff;
 						zaddr+=2;
 					}
+					else {
+						printf("ERR REGW: %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
+						zaddr=0; // cancel
+					}
 				}
+				//printf("CONV: %08lx <- %08lx\n",zaddr,zdata);
 
 				// PANNING
 				if (zaddr==MNT_BASE_PAN_HI) framebuffer_pan_offset=zdata<<16;
@@ -655,7 +816,6 @@ int main()
 				else if (zaddr==MNT_BASE_BLITTER_COLORMODE) {
 					// blitter_colormode
 					//set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
-					//render_faces(zdata);
 					blitter_colormode = zdata;
 				}
 				else if (zaddr==MNT_BASE_SCALEMODE) {
@@ -663,10 +823,10 @@ int main()
 				}
 
 				else if (zaddr==MNT_BASE_MODE) {
-					//printf("mode change: %d\n",zdata);
+					printf("mode change: %d\n",zdata);
 					// https://github.com/Xilinx/embeddedsw/blob/master/XilinxProcessorIPLib/drivers/vtc/src/xvtc.c
 
-					if (zdata==0) {
+					/*if (zdata==0) {
 					    video_system_init(1280, 720, 1980, 750, 75, 60, hdiv, vdiv);
 					} else if (zdata==1) {
 					    video_system_init(800, 600, 1056, 628, 40, 60, hdiv, vdiv);
@@ -682,25 +842,37 @@ int main()
 					    video_system_init(720, 576, 864, 625, 27, 50, hdiv, vdiv);
 					} else {
 						printf("error: unknown mode\n");
-					}
+					}*/
 				}
 				else if (zaddr==MNT_BASE_HSIZE) {
-					vmode_hsize=zdata;
-					init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
+					//vmode_hsize=zdata;
+					//init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
 				}
 				else if (zaddr==MNT_BASE_VSIZE) {
-					vmode_vsize=zdata;
-					init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
+					//vmode_vsize=zdata;
+					//init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
 				}
 				else if (zaddr==MNT_BASE_COLORMODE) {
 					//colormode=zdata;
-					hdiv=zdata;
+					//hdiv=zdata;
 				}
 				else if (zaddr==MNT_BASE_VIDEOCAP_MODE) {
 					//videocap_mode=zdata;
 				}
 				else if (zaddr==MNT_BASE_ETH_TX) {
 					ethernet_send_frame(zdata);
+				}
+				else if (zaddr==MNT_BASE_RUN_HI) {
+					arm_run_address=((u32)zdata)<<16;
+				}
+				else if (zaddr==MNT_BASE_RUN_LO) {
+					/*arm_run_address|=zdata;
+					printf("[ARM_RUN] %lx\n",arm_run_address);
+					void (*trampoline)(uint16_t x) = arm_run_address;
+					trampoline(arm_run_arg0);*/
+				}
+				else if (zaddr==MNT_BASE_RUN_ARG0) {
+					arm_run_arg0 = zdata;
 				}
 			}
 			else if (zaddr>=MNT_FB_BASE) {
@@ -726,10 +898,10 @@ int main()
 		}
 		else if (readreq) {
 			uint32_t zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
-			//printf("READ addr: %08lx\n",zaddr);
+			//printf("READ: %08lx\n",zaddr);
 
 			if (zaddr>0x10000000) {
-				printf("ERRR illegal address %08lx\n",zaddr);
+				printf("ERRR: illegal address %08lx\n",zaddr);
 			}
 			else if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
 				// read ARM "register"
@@ -746,12 +918,14 @@ int main()
 			else if (zaddr>=MNT_FB_BASE) {
 				u32 addr = zaddr-MNT_FB_BASE;
 			    //addr ^= 2ul; // swap words (BE -> LE)
-		        u32 z3 = (zstate_raw&(1<<25));
+		        u32 z3 = (zstate_raw&(1<<25)); // highly inefficient
 				if (z3) {
 					u32 b1 = mem[addr]<<24;
 					u32 b2 = mem[addr+1]<<16;
 					u32 b3 = mem[addr+2]<<8;
 					u32 b4 = mem[addr+3];
+
+					//printf("     '-> %08lx\n",b1|b2|b3|b4);
 
 					MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, b1|b2|b3|b4);
 				} else {
@@ -776,7 +950,7 @@ int main()
 				} else {
 					vdiv = 2;
 				}
-				init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
+				//init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
 			}
 			interlace_old = interlace;
 
@@ -785,13 +959,13 @@ int main()
 				hdiv = 1;
 				vdiv = 2;
 				handle_amiga_reset();
-	    		usleep(10000);
+				/*usleep(10000);
 	    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 1);
 	    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000+0x5); // OP_VSYNC
 	    		usleep(10000);
 	    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0);
 	    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0); // NOP
-	    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // NOP
+	    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // NOP*/
 			}
 		}
 
