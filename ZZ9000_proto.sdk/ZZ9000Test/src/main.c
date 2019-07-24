@@ -296,9 +296,9 @@ u32 dump_vdma_status(XAxiVdma *InstancePtr)
 }
 
 void fb_fill() {
-	for (int i=0; i<720*576; i++) {
+	/*for (int i=0; i<720*576; i++) {
 		framebuffer[i] = 0xff0000ff+i;
-	}
+	}*/
 }
 
 static XClk_Wiz clkwiz;
@@ -660,7 +660,7 @@ int main()
 
     disable_reset_out();
 
-    framebuffer=(u32*)0x110000;
+    framebuffer=(u32*)0x200000;
     int need_req_ack = 0;
 	u8* mem = (u8*)framebuffer;
 
