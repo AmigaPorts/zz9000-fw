@@ -74,9 +74,9 @@ module MNTZorro_v0_1_S00_AXI
   input wire VCAP_R0,
   
   output wire ZORRO_NCFGOUT,
-  output wire ZORRO_NSLAVE,
+  (* mark_debug = "true" *) output wire ZORRO_NSLAVE,
   output wire ZORRO_NCINH,
-  output wire ZORRO_NDTACK,
+  (* mark_debug = "true" *) output wire ZORRO_NDTACK,
 	
 	//  HP master interface to write to PS memory directly
 	input wire m00_axi_aclk,
@@ -504,15 +504,15 @@ module MNTZorro_v0_1_S00_AXI
 
   
   reg [3:0] znAS_sync  = 3'b111;
-  reg [3:0] znUDS_sync = 3'b000;
-  reg [3:0] znLDS_sync = 3'b000;
-  reg [3:0] zREAD_sync = 3'b000;
+  (* mark_debug = "true" *) reg [2:0] znUDS_sync = 3'b000;
+  (* mark_debug = "true" *) reg [2:0] znLDS_sync = 3'b000;
+  (* mark_debug = "true" *) reg [2:0] zREAD_sync = 3'b000;
   
-  reg [4:0] znFCS_sync = 5'b11111;
-  reg [2:0] znDS1_sync = 3'b000;
-  reg [2:0] znDS0_sync = 3'b000;
+  (* mark_debug = "true" *) reg [2:0] znFCS_sync = 3'b111;
+  (* mark_debug = "true" *) reg [2:0] znDS1_sync = 3'b000;
+  (* mark_debug = "true" *) reg [2:0] znDS0_sync = 3'b000;
   reg [1:0] znRST_sync = 2'b11;
-  reg [1:0] zDOE_sync = 2'b00;
+  (* mark_debug = "true" *) reg [1:0] zDOE_sync = 2'b00;
   reg [4:0] zE7M_sync = 5'b00000;
   reg [2:0] znCFGIN_sync = 3'b000;
   
@@ -548,27 +548,27 @@ module MNTZorro_v0_1_S00_AXI
   reg [15:0] data_in_z3_low16;
   reg [15:0] z3_din_high_s2;
   reg [15:0] z3_din_low_s2;
-  reg [31:0] z3addr;
-  reg [31:0] last_z3addr;
-  reg [31:0] z3addr2;
+  (* mark_debug = "true" *) reg [31:0] z3addr;
+  (* mark_debug = "true" *) reg [31:0] last_z3addr;
+  (* mark_debug = "true" *) reg [31:0] z3addr2;
   reg [31:0] z3addr3;
-  reg [31:0] z3_mapped_addr;
+  (* mark_debug = "true" *) reg [31:0] z3_mapped_addr;
   reg [31:0] z3_read_addr;
   reg [15:0] z3_read_data;
   reg z3_din_latch = 0;
-  reg z3_fcs_state = 1;
+  (* mark_debug = "true" *) reg z3_fcs_state = 1;
   reg z3_end_cycle = 0;
   
-  reg z3addr_in_ram = 0;
-  reg z3addr_in_reg = 0;
+  (* mark_debug = "true" *) reg z3addr_in_ram = 0;
+  (* mark_debug = "true" *) reg z3addr_in_reg = 0;
   reg z3addr_autoconfig = 0;
 
   reg ZORRO3 = 1;
   reg dataout = 0;
-  reg dataout_z3 = 0;
+  (* mark_debug = "true" *) reg dataout_z3 = 0;
   reg dataout_enable = 0;
-  reg slaven = 0;
-  reg dtack = 0;
+  (* mark_debug = "true" *) reg slaven = 0;
+  (* mark_debug = "true" *) reg dtack = 0;
   reg dtack_latched = 0;
 
   reg z_reset = 0;
@@ -576,8 +576,8 @@ module MNTZorro_v0_1_S00_AXI
   reg z_cfgin_lo = 0;
   reg z3_confdone = 0;
 
-  reg zorro_read = 0;
-  reg zorro_write = 0;
+  (* mark_debug = "true" *) reg zorro_read = 0;
+  (* mark_debug = "true" *) reg zorro_write = 0;
   
   reg [15:0] data_in;
   reg [31:0] rr_data;
@@ -585,10 +585,10 @@ module MNTZorro_v0_1_S00_AXI
   reg [15:0] regdata_in;
 
   // ram arbiter
-  reg zorro_ram_read_request = 0;
-  reg zorro_ram_write_request = 0;
-  reg [31:0] zorro_ram_read_addr;
-  reg [31:0] zorro_ram_read_data;
+  (* mark_debug = "true" *) reg zorro_ram_read_request = 0;
+  (* mark_debug = "true" *) reg zorro_ram_write_request = 0;
+  (* mark_debug = "true" *) reg [31:0] zorro_ram_read_addr;
+  (* mark_debug = "true" *) reg [31:0] zorro_ram_read_data;
   reg [3:0] zorro_ram_read_bytes;
   reg [31:0] zorro_ram_write_addr;
   reg [31:0] zorro_ram_write_data;
@@ -599,10 +599,10 @@ module MNTZorro_v0_1_S00_AXI
   reg [15:0] zorro_write_capture_data = 0;
 
   // z3 strobes
-  reg z3_ds3=0;
-  reg z3_ds2=0;
-  reg z3_ds1=0;
-  reg z3_ds0=0;
+  (* mark_debug = "true" *) reg z3_ds3=0;
+  (* mark_debug = "true" *) reg z3_ds2=0;
+  (* mark_debug = "true" *) reg z3_ds1=0;
+  (* mark_debug = "true" *) reg z3_ds0=0;
   
   // level shifter direction pins
   assign ZORRO_DATADIR     = ZORRO_DOE & (dataout_enable | dataout_z3); // d2-d9  d10-15, d0-d1
@@ -610,15 +610,16 @@ module MNTZorro_v0_1_S00_AXI
   assign ZORRO_ADDRDIR2    = 0; //ZORRO_DOE & (dataout_z3_latched);
   assign ZORRO_NBRN = 1; // TODO busmastering
   
+  // data/addr out signals are gated by master's DOE signal
   wire ZORRO_DATA_T = ~(ZORRO_DOE & (dataout_enable | dataout_z3));
   wire ZORRO_ADDR_T = ~(ZORRO_DOE & dataout_z3);
   
   reg z_ovr = 0;
   assign ZORRO_NCINH = z_ovr?1'b1:1'b0; // inverse
   
-  assign ZORRO_NSLAVE = (slaven)?1'b0:1'b1;
-  // FIXME do we need to gate NDTACK like this?
-  assign ZORRO_NDTACK  = (ZORRO_DOE & dtack_latched)?1'b1:1'b0; // inverse
+  // "slave" signals are gated by master's FCS signal
+  assign ZORRO_NSLAVE = (~ZORRO_NFCS & slaven)?1'b0:1'b1;
+  assign ZORRO_NDTACK = (~ZORRO_NFCS & dtack) ?1'b1:1'b0; // inverse, pull-down transistor on output
   wire [22:0] z3_addr_out = {data_z3_low16_latched, 7'bZZZ_ZZZZ}; // FIXME this creates tri-cell warning?
   //wire [22:0] z3_addr_out = {data_z3_low16_latched, 7'b111_1111}; // FIXME this creates tri-cell warning?
   
@@ -670,7 +671,7 @@ module MNTZorro_v0_1_S00_AXI
     
     znDS1_sync  <= {znDS1_sync[1:0],ZORRO_NDS1};
     znDS0_sync  <= {znDS0_sync[1:0],ZORRO_NDS0};
-    znFCS_sync  <= {znFCS_sync[3:0],ZORRO_NFCS};
+    znFCS_sync  <= {znFCS_sync[1:0],ZORRO_NFCS};
     znCFGIN_sync<= {znCFGIN_sync[1:0],ZORRO_NCFGIN};
     zDOE_sync   <= {zDOE_sync[0],ZORRO_DOE};
     
@@ -707,23 +708,21 @@ module MNTZorro_v0_1_S00_AXI
     
     // sample z3addr on falling edge of /FCS
     // A4000 needs [0] here, [1] worked for A3000
-    case (znFCS_sync[1])
-      1'b1: begin
+    case (znFCS_sync[1:0])
+      2'b01: begin
         // these guards are here so that the values are only sampled
         // on the edges of this signal
-        if (z3_fcs_state == 0) begin
+        //if (z3_fcs_state == 0) begin
           z3_fcs_state <= 1;
-          z3_end_cycle <= 1;
           z3addr <= 0;
-        end
+        //end
       end
-      1'b0: begin
+      2'b10: begin
         // CHECK: if responding too quickly, this causes crashes
-        if (z3_fcs_state == 1) begin
+        //if (z3_fcs_state == 1) begin
           z3_fcs_state <= 0;
-          z3_end_cycle <= 0;
           z3addr <= z3addr2;
-        end
+        //end
       end
     endcase
     
@@ -753,7 +752,7 @@ module MNTZorro_v0_1_S00_AXI
     data_z3_hi16_latched <= data_z3_hi16;
     data_z3_low16_latched <= data_z3_low16;
     
-    dtack_latched <= dtack;
+    //dtack_latched <= dtack;
     
     z_reset <= (znRST_sync==2'b00);
     z_cfgin <= (znCFGIN_sync==3'b000);
@@ -826,7 +825,7 @@ module MNTZorro_v0_1_S00_AXI
   localparam Z3_REGREAD_PRE = 50;
   localparam Z3_WRITE_PRE2 = 51;
   
-  reg [7:0] zorro_state = COLD;
+  (* mark_debug = "true" *) reg [7:0] zorro_state = COLD;
   reg zorro_idle = 0;
   reg [7:0] read_counter = 0; // used by Z3
   reg [7:0] dataout_time = 'h02;
@@ -845,8 +844,8 @@ module MNTZorro_v0_1_S00_AXI
   reg [15:0] count_writes = 0;
   reg [15:0] testreg_1 = 0;
   
-  reg zorro_ram_read_flag = 0;
-  reg zorro_ram_write_flag = 0;
+  (* mark_debug = "true" *) reg zorro_ram_read_flag = 0;
+  (* mark_debug = "true" *) reg zorro_ram_write_flag = 0;
   
   reg videocap_mode = 0;
   reg [9:0] videocap_hs = 0;
@@ -1057,6 +1056,8 @@ module MNTZorro_v0_1_S00_AXI
         z_ovr <= 0;
         z_confout <= 0;
         z3_confdone <= 0;
+        zorro_ram_read_request <= 0;
+        zorro_ram_write_request <= 0;
         
         if (!z_reset)
           zorro_state <= DECIDE_Z2_Z3;
@@ -1180,7 +1181,7 @@ module MNTZorro_v0_1_S00_AXI
       end
       
       Z3_DTACK: begin
-        if (z3_end_cycle) begin
+        if (z3_fcs_state == 1) begin
           dtack <= 0;
           dataout_z3 <= 0;
           slaven <= 0;
@@ -1448,12 +1449,13 @@ module MNTZorro_v0_1_S00_AXI
       // ZORRO 3
       // =========================================================================
       
+      // questionable direct access
       Z3_REGWRITE_PRE: begin
-        if (znDS1_sync[1]==0) begin
+        if (znDS1_sync[2]==0) begin
           regdata_in <= data_in_z3_low16;
           z3addr_regpart <= (z3addr[15:0])|16'h2;
           zorro_state <= Z3_REGWRITE;
-        end else if (znUDS_sync[1]==0) begin
+        end else if (znUDS_sync[2]==0) begin
           regdata_in <= zdata_in_sync;
           z3addr_regpart <= z3addr[15:0];
           zorro_state <= Z3_REGWRITE;
@@ -1462,65 +1464,57 @@ module MNTZorro_v0_1_S00_AXI
       
       Z3_REGREAD_PRE: begin
         z3addr_regpart <= z3addr[15:0]; //|16'h2;
-        if (z3_din_latch) begin
+        //if (z3_din_latch) begin
           zorro_state <= Z3_REGREAD;
-        end
+        //end
+        dataout_z3 <= 1;
       end
       
       Z3_IDLE: begin
+        read_counter <= 0;
+      
         if (z3_fcs_state==0) begin
           // falling edge of /FCS
           
           if (zorro_write && z3addr_in_reg) begin
             // FIXME doesn't support 32 bit access
             // write to register
-            slaven <= 1;
-            dataout_z3 <= 0;
             zorro_state <= Z3_REGWRITE_PRE;
+            slaven <= 1;
           end else if (zorro_read && z3addr_in_reg) begin
             // read registers
-            slaven <= 1;
-            dataout_z3 <= 1;
             data_z3_hi16 <= default_data;
             data_z3_low16 <= default_data;
             zorro_state <= Z3_REGREAD_PRE;
+            slaven <= 1;
           end else if (z3addr_in_ram && zorro_write) begin
             // write to memory
+            //read_counter <= 0;
             slaven <= 1;
-            dataout_z3 <= 0;
-            read_counter <= 0;
             
-            //if (z3_din_latch) begin
-              zorro_state <= Z3_WRITE_PRE;
-            //end
+            zorro_state <= Z3_WRITE_PRE;
           end else if (z3addr_in_ram && zorro_read) begin
             // read from memory
-            slaven <= 1;
             data_z3_hi16  <= default_data;
             data_z3_low16 <= default_data;
-            dataout_z3 <= 1;
-            dtack <= 0;
-        
+            slaven <= 1;
+            
             zorro_state <= Z3_READ_UPPER;
-          
           end else begin
             // address not recognized
             slaven <= 0;
-            dtack <= 0;
-            dataout_z3 <= 0;
           end
           
         end else begin
           // not in a cycle
           slaven <= 0;
-          dtack <= 0;
-          dataout_z3 <= 0;
         end
       end
       
       Z3_REGWRITE: begin
         regwrite_addr <= z3addr_regpart;
         zorro_state <= REGWRITE;
+        dtack <= 1;
       end
       
       Z3_REGREAD: begin
@@ -1532,45 +1526,48 @@ module MNTZorro_v0_1_S00_AXI
       Z3_REGREAD_POST: begin
         data_z3_hi16  <= rr_data[31:16];
         data_z3_low16 <= rr_data[15:0];
-        zorro_state <= Z3_READ_DELAY2;
-        read_counter <= 0;
+        zorro_state <= Z3_ENDCYCLE;
+        dtack <= 1;
       end
         
       Z3_READ_UPPER: begin
-        last_z3addr <= z3_mapped_addr;
       
         zorro_state <= Z3_READ_DELAY1;
+        last_z3addr <= z3_mapped_addr;
         zorro_ram_read_addr <= z3_mapped_addr;
         zorro_ram_read_bytes <= 4'b1111;
         zorro_ram_read_request <= 1;
+        dataout_z3 <= 1; // enable data output
+        
+        
+        // dummy read
+        /*dtack <= 1;
+        data_z3_hi16 <= 'hffff;
+        data_z3_low16 <= 'hffff;
+        zorro_state <= Z3_ENDCYCLE;*/
+        
       end
       
       Z3_READ_DELAY1: begin
         data_z3_hi16 <= slv_reg1[31:16];
         data_z3_low16 <= slv_reg1[15:0];
-        read_counter <= 0;
-          
-        if (!zorro_ram_read_request && !zorro_ram_read_flag) begin
-          zorro_state <= Z3_ENDCYCLE; // CHECK DELAY
-          //zorro_state <= Z3_READ_DELAY2; // CHECK DELAY
+        //read_counter <= 0;
+        
+        if (zorro_ram_read_flag) begin
+          zorro_ram_read_request <= 0; // acknowledge read request done
+          zorro_state <= Z3_READ_DELAY2; // CHECK DELAY
         end
       end
       
       Z3_READ_DELAY2: begin
-        if (read_counter >= dataout_time)
+        //if (read_counter >= dataout_time)
+        if (!zorro_ram_read_flag) begin
           zorro_state <= Z3_ENDCYCLE;
-        else
-          read_counter <= read_counter+1'b1;
-      end
-      
-      Z3_WRITE_PRE2: begin
-        // 1 more time for good measure
-        z3_ds0 <= ~znDS0_sync[1];
-        z3_ds1 <= ~znDS1_sync[1];
-        z3_ds2 <= ~znLDS_sync[1];
-        z3_ds3 <= ~znUDS_sync[1];
-        
-        zorro_state <= Z3_WRITE_UPPER;
+          dtack <= 1;
+          slaven <= 0;
+        end
+        //else
+        //  read_counter <= read_counter+1'b1;
       end
       
       Z3_WRITE_PRE: begin
@@ -1588,15 +1585,32 @@ module MNTZorro_v0_1_S00_AXI
         end
       end
       
+      Z3_WRITE_PRE2: begin
+        // 1 more time for good measure
+        z3_ds0 <= ~znDS0_sync[1];
+        z3_ds1 <= ~znDS1_sync[1];
+        z3_ds2 <= ~znLDS_sync[1];
+        z3_ds3 <= ~znUDS_sync[1];
+        
+        zorro_state <= Z3_WRITE_UPPER;
+      end
+      
       Z3_WRITE_UPPER: begin
-        if (!zorro_ram_write_request && !zorro_ram_write_flag) begin
-          zorro_ram_write_addr <= z3_mapped_addr;
-          last_z3addr <= z3_mapped_addr;
-          zorro_ram_write_bytes <= {z3_ds3,z3_ds2,z3_ds1,z3_ds0};
-          zorro_ram_write_data  <= {z3_din_high_s2,z3_din_low_s2};
-          zorro_ram_write_request <= 1;
-          
-          zorro_state <= Z3_WRITE_FINALIZE;
+        last_z3addr <= z3_mapped_addr;
+        zorro_ram_write_addr  <= z3_mapped_addr;
+        zorro_ram_write_bytes <= {z3_ds3,z3_ds2,z3_ds1,z3_ds0};
+        zorro_ram_write_data  <= {z3_din_high_s2,z3_din_low_s2};
+        zorro_ram_write_request <= 1;
+        
+        zorro_state <= Z3_WRITE_FINALIZE;
+      end
+      
+      Z3_WRITE_FINALIZE: begin
+        if (zorro_ram_write_flag) begin
+          zorro_ram_write_request <= 0; // acknowledge write request done
+          zorro_state <= Z3_ENDCYCLE;
+          dtack <= 1;
+          slaven <= 0;
         end
       end
       
@@ -1621,19 +1635,18 @@ module MNTZorro_v0_1_S00_AXI
         end
       end*/
       
-      Z3_WRITE_FINALIZE: begin
-        dtack <= 1;
-        zorro_state <= Z3_ENDCYCLE;
-      end
-        
       Z3_ENDCYCLE: begin
-        if (z3_end_cycle) begin
+        read_counter <= read_counter + 1'b1;
+        if (read_counter >= 10) begin
+          dtack <= 0;
+        end
+        
+        if (z3_fcs_state==1) begin
           dtack <= 0;
           slaven <= 0;
           dataout_z3 <= 0;
           zorro_state <= Z3_IDLE;
-        end else
-          dtack <= 1;
+        end
       end
       
       // FIXME why is there no dataout time on REGREAD? (see memory reads)
@@ -1654,7 +1667,7 @@ module MNTZorro_v0_1_S00_AXI
             end*/
           'h00: begin
             // this flag is read by Amiga software to check if all writes are done
-            rr_data <= zorro_ram_write_request;
+            rr_data <= 0; //zorro_ram_write_request;
           end
           default: begin
             rr_data[31:16] <= REVISION;
@@ -1680,19 +1693,14 @@ module MNTZorro_v0_1_S00_AXI
       end
     endcase
     
-    if (slv_reg0[31]==1'b1) begin
-      zorro_ram_write_request <= 0;
-    end
-    if (slv_reg0[30]==1'b1) begin
-      zorro_ram_read_request <= 0;
-    end
     // ARM video control
     if (slv_reg2[31]==1'b1) begin
       video_control_data <= slv_reg3[31:0];
       video_control_op <= slv_reg2[7:0];
     end
-    
-    zorro_ram_read_flag <= slv_reg0[30];
+
+    // read / write request acknowledged by ARM
+    zorro_ram_read_flag  <= slv_reg0[30];
     zorro_ram_write_flag <= slv_reg0[31];
     
     out_reg0 <= ZORRO3 ? last_z3addr : last_addr;
