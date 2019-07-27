@@ -593,6 +593,10 @@ void handle_amiga_reset() {
     //video_system_init(640, 480, 800, 525, 25, 60, 1, 2);
     //video_system_init(1280, 720, 1980, 750, 75, 60, 1, 2);
 
+	usleep(10000);
+
+	init_video_formatter(MNTZ_BASE_ADDR, 2, 720, 576, 864, 625, 732, 796, 581, 586, 1);
+
     // cool down a bit after reset
 	usleep(100000);
 }
@@ -957,17 +961,20 @@ int main()
 		else {
 			// there are no read/write requests, we can do other housekeeping
 
-			int interlace = !!(zstate_raw&(1<<24));
-			if (interlace != interlace_old) {
-				// interlace has changed, we need to reconfigure vdma for the new screen height
-				if (interlace) {
-					vdiv = 1;
-				} else {
-					vdiv = 2;
+			// FIXME only in vcap mode
+			if (vmode_vsize == 576) {
+				int interlace = !!(zstate_raw&(1<<24));
+				if (interlace != interlace_old) {
+					// interlace has changed, we need to reconfigure vdma for the new screen height
+					if (interlace) {
+						vdiv = 1;
+					} else {
+						vdiv = 2;
+					}
+					init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
 				}
-				init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
+				interlace_old = interlace;
 			}
-			interlace_old = interlace;
 
 			if (zstate==0) {
 				// RESET

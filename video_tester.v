@@ -90,6 +90,7 @@ reg [11:0] need_line_fetch = 0; // vga domain
 
 reg [11:0] need_line_fetch_reg = 0;
 reg [11:0] need_line_fetch_reg2 = 0;
+reg [11:0] need_line_fetch_reg3 = 0;
 reg [11:0] last_line_fetch = 1;
 
 wire [31:0] pixin = m_axis_vid_tdata;
@@ -111,6 +112,7 @@ always @(posedge m_axis_vid_aclk)
     
     need_line_fetch_reg  <= need_line_fetch; // sync to clock domain
     need_line_fetch_reg2 <= need_line_fetch_reg>>scale_y_effective; // line duplication
+    //need_line_fetch_reg3 <= need_line_fetch_reg2;
     
     scale_y_effective <= control_interlace ? 0 : scale_y;
     
@@ -137,12 +139,11 @@ always @(posedge m_axis_vid_aclk)
           // reading from vdma
           last_line_fetch <= need_line_fetch_reg2;
           
-          if (pixin_valid) begin
-            if (pixin_end_of_line) begin
-              ready_for_vdma <= 0;
-              next_input_state <= 4'h2;
-            end
-          end
+          if (pixin_valid && pixin_end_of_line) begin
+            ready_for_vdma <= 0;
+            next_input_state <= 4'h2;
+          end else
+            ready_for_vdma <= 1; // moved here
         end
       4'h2: begin
           // we've read more than enough of this line, wait until it's time for the next
@@ -151,7 +152,7 @@ always @(posedge m_axis_vid_aclk)
           else if (need_line_fetch_reg2!=last_line_fetch) begin
             // time to read the next line
             next_input_state <= 4'h1;
-            ready_for_vdma <= 1;
+            //ready_for_vdma <= 1; // from here
           end
         end
       4'h3: begin
