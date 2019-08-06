@@ -1,8 +1,8 @@
 //Copyright 1986-2018 Xilinx, Inc. All Rights Reserved.
 //--------------------------------------------------------------------------------
 //Tool Version: Vivado v.2018.3 (lin64) Build 2405991 Thu Dec  6 23:36:41 MST 2018
-//Date        : Tue Jan  8 15:24:37 2019
-//Host        : doom running 64-bit Debian GNU/Linux buster/sid
+//Date        : Tue Aug  6 23:53:11 2019
+//Host        : mntmn-i9 running 64-bit Debian GNU/Linux 10 (buster)
 //Command     : generate_target zz9000_ps_wrapper.bd
 //Design      : zz9000_ps_wrapper
 //Purpose     : IP block netlist
@@ -31,9 +31,32 @@ module zz9000_ps_wrapper
     FIXED_IO_ps_clk,
     FIXED_IO_ps_porb,
     FIXED_IO_ps_srstb,
-    HDMI_INTN,
-    I2C0_scl_io,
-    I2C0_sda_io,
+    VCAP_B0,
+    VCAP_B1,
+    VCAP_B2,
+    VCAP_B3,
+    VCAP_B4,
+    VCAP_B5,
+    VCAP_B6,
+    VCAP_B7,
+    VCAP_G0,
+    VCAP_G1,
+    VCAP_G2,
+    VCAP_G3,
+    VCAP_G4,
+    VCAP_G5,
+    VCAP_G6,
+    VCAP_G7,
+    VCAP_HSYNC,
+    VCAP_R0,
+    VCAP_R1,
+    VCAP_R2,
+    VCAP_R3,
+    VCAP_R4,
+    VCAP_R5,
+    VCAP_R6,
+    VCAP_R7,
+    VCAP_VSYNC,
     VGA_B,
     VGA_DE,
     VGA_G,
@@ -43,10 +66,15 @@ module zz9000_ps_wrapper
     VGA_VS,
     ZORRO_ADDR,
     ZORRO_ADDRDIR,
+    ZORRO_ADDRDIR2,
+    ZORRO_C28D,
     ZORRO_DATA,
     ZORRO_DATADIR,
     ZORRO_DOE,
     ZORRO_E7M,
+    ZORRO_INT6,
+    ZORRO_NBGN,
+    ZORRO_NBRN,
     ZORRO_NCCS,
     ZORRO_NCFGIN,
     ZORRO_NCFGOUT,
@@ -57,7 +85,6 @@ module zz9000_ps_wrapper
     ZORRO_NFCS,
     ZORRO_NIORST,
     ZORRO_NLDS,
-    ZORRO_NMTCR,
     ZORRO_NSLAVE,
     ZORRO_NUDS,
     ZORRO_READ);
@@ -82,22 +109,50 @@ module zz9000_ps_wrapper
   inout FIXED_IO_ps_clk;
   inout FIXED_IO_ps_porb;
   inout FIXED_IO_ps_srstb;
-  inout HDMI_INTN;
-  inout I2C0_scl_io;
-  inout I2C0_sda_io;
-  output [4:0]VGA_B;
+  input VCAP_B0;
+  input VCAP_B1;
+  input VCAP_B2;
+  input VCAP_B3;
+  input VCAP_B4;
+  input VCAP_B5;
+  input VCAP_B6;
+  input VCAP_B7;
+  input VCAP_G0;
+  input VCAP_G1;
+  input VCAP_G2;
+  input VCAP_G3;
+  input VCAP_G4;
+  input VCAP_G5;
+  input VCAP_G6;
+  input VCAP_G7;
+  input VCAP_HSYNC;
+  input VCAP_R0;
+  input VCAP_R1;
+  input VCAP_R2;
+  input VCAP_R3;
+  input VCAP_R4;
+  input VCAP_R5;
+  input VCAP_R6;
+  input VCAP_R7;
+  input VCAP_VSYNC;
+  output [7:0]VGA_B;
   output VGA_DE;
-  output [5:0]VGA_G;
+  output [7:0]VGA_G;
   output VGA_HS;
   output VGA_PCLK;
-  output [4:0]VGA_R;
+  output [7:0]VGA_R;
   output VGA_VS;
   inout [22:0]ZORRO_ADDR;
   output ZORRO_ADDRDIR;
+  output ZORRO_ADDRDIR2;
+  input ZORRO_C28D;
   inout [15:0]ZORRO_DATA;
   output ZORRO_DATADIR;
   input ZORRO_DOE;
   input ZORRO_E7M;
+  output ZORRO_INT6;
+  input ZORRO_NBGN;
+  output ZORRO_NBRN;
   input ZORRO_NCCS;
   input ZORRO_NCFGIN;
   output ZORRO_NCFGOUT;
@@ -108,7 +163,6 @@ module zz9000_ps_wrapper
   input ZORRO_NFCS;
   input ZORRO_NIORST;
   input ZORRO_NLDS;
-  input ZORRO_NMTCR;
   output ZORRO_NSLAVE;
   input ZORRO_NUDS;
   input ZORRO_READ;
@@ -134,28 +188,50 @@ module zz9000_ps_wrapper
   wire FIXED_IO_ps_clk;
   wire FIXED_IO_ps_porb;
   wire FIXED_IO_ps_srstb;
-  wire HDMI_INTN;
-  wire I2C0_scl_i;
-  wire I2C0_scl_io;
-  wire I2C0_scl_o;
-  wire I2C0_scl_t;
-  wire I2C0_sda_i;
-  wire I2C0_sda_io;
-  wire I2C0_sda_o;
-  wire I2C0_sda_t;
-  wire [4:0]VGA_B;
+  wire VCAP_B0;
+  wire VCAP_B1;
+  wire VCAP_B2;
+  wire VCAP_B3;
+  wire VCAP_B4;
+  wire VCAP_B5;
+  wire VCAP_B6;
+  wire VCAP_B7;
+  wire VCAP_G0;
+  wire VCAP_G1;
+  wire VCAP_G2;
+  wire VCAP_G3;
+  wire VCAP_G4;
+  wire VCAP_G5;
+  wire VCAP_G6;
+  wire VCAP_G7;
+  wire VCAP_HSYNC;
+  wire VCAP_R0;
+  wire VCAP_R1;
+  wire VCAP_R2;
+  wire VCAP_R3;
+  wire VCAP_R4;
+  wire VCAP_R5;
+  wire VCAP_R6;
+  wire VCAP_R7;
+  wire VCAP_VSYNC;
+  wire [7:0]VGA_B;
   wire VGA_DE;
-  wire [5:0]VGA_G;
+  wire [7:0]VGA_G;
   wire VGA_HS;
   wire VGA_PCLK;
-  wire [4:0]VGA_R;
+  wire [7:0]VGA_R;
   wire VGA_VS;
   wire [22:0]ZORRO_ADDR;
   wire ZORRO_ADDRDIR;
+  wire ZORRO_ADDRDIR2;
+  wire ZORRO_C28D;
   wire [15:0]ZORRO_DATA;
   wire ZORRO_DATADIR;
   wire ZORRO_DOE;
   wire ZORRO_E7M;
+  wire ZORRO_INT6;
+  wire ZORRO_NBGN;
+  wire ZORRO_NBRN;
   wire ZORRO_NCCS;
   wire ZORRO_NCFGIN;
   wire ZORRO_NCFGOUT;
@@ -166,21 +242,10 @@ module zz9000_ps_wrapper
   wire ZORRO_NFCS;
   wire ZORRO_NIORST;
   wire ZORRO_NLDS;
-  wire ZORRO_NMTCR;
   wire ZORRO_NSLAVE;
   wire ZORRO_NUDS;
   wire ZORRO_READ;
 
-  IOBUF I2C0_scl_iobuf
-       (.I(I2C0_scl_o),
-        .IO(I2C0_scl_io),
-        .O(I2C0_scl_i),
-        .T(I2C0_scl_t));
-  IOBUF I2C0_sda_iobuf
-       (.I(I2C0_sda_o),
-        .IO(I2C0_sda_io),
-        .O(I2C0_sda_i),
-        .T(I2C0_sda_t));
   zz9000_ps zz9000_ps_i
        (.DDR_addr(DDR_addr),
         .DDR_ba(DDR_ba),
@@ -203,13 +268,32 @@ module zz9000_ps_wrapper
         .FIXED_IO_ps_clk(FIXED_IO_ps_clk),
         .FIXED_IO_ps_porb(FIXED_IO_ps_porb),
         .FIXED_IO_ps_srstb(FIXED_IO_ps_srstb),
-        .HDMI_INTN(HDMI_INTN),
-        .I2C0_scl_i(I2C0_scl_i),
-        .I2C0_scl_o(I2C0_scl_o),
-        .I2C0_scl_t(I2C0_scl_t),
-        .I2C0_sda_i(I2C0_sda_i),
-        .I2C0_sda_o(I2C0_sda_o),
-        .I2C0_sda_t(I2C0_sda_t),
+        .VCAP_B0(VCAP_B0),
+        .VCAP_B1(VCAP_B1),
+        .VCAP_B2(VCAP_B2),
+        .VCAP_B3(VCAP_B3),
+        .VCAP_B4(VCAP_B4),
+        .VCAP_B5(VCAP_B5),
+        .VCAP_B6(VCAP_B6),
+        .VCAP_B7(VCAP_B7),
+        .VCAP_G0(VCAP_G0),
+        .VCAP_G1(VCAP_G1),
+        .VCAP_G2(VCAP_G2),
+        .VCAP_G3(VCAP_G3),
+        .VCAP_G4(VCAP_G4),
+        .VCAP_G5(VCAP_G5),
+        .VCAP_G6(VCAP_G6),
+        .VCAP_G7(VCAP_G7),
+        .VCAP_HSYNC(VCAP_HSYNC),
+        .VCAP_R0(VCAP_R0),
+        .VCAP_R1(VCAP_R1),
+        .VCAP_R2(VCAP_R2),
+        .VCAP_R3(VCAP_R3),
+        .VCAP_R4(VCAP_R4),
+        .VCAP_R5(VCAP_R5),
+        .VCAP_R6(VCAP_R6),
+        .VCAP_R7(VCAP_R7),
+        .VCAP_VSYNC(VCAP_VSYNC),
         .VGA_B(VGA_B),
         .VGA_DE(VGA_DE),
         .VGA_G(VGA_G),
@@ -219,10 +303,15 @@ module zz9000_ps_wrapper
         .VGA_VS(VGA_VS),
         .ZORRO_ADDR(ZORRO_ADDR),
         .ZORRO_ADDRDIR(ZORRO_ADDRDIR),
+        .ZORRO_ADDRDIR2(ZORRO_ADDRDIR2),
+        .ZORRO_C28D(ZORRO_C28D),
         .ZORRO_DATA(ZORRO_DATA),
         .ZORRO_DATADIR(ZORRO_DATADIR),
         .ZORRO_DOE(ZORRO_DOE),
         .ZORRO_E7M(ZORRO_E7M),
+        .ZORRO_INT6(ZORRO_INT6),
+        .ZORRO_NBGN(ZORRO_NBGN),
+        .ZORRO_NBRN(ZORRO_NBRN),
         .ZORRO_NCCS(ZORRO_NCCS),
         .ZORRO_NCFGIN(ZORRO_NCFGIN),
         .ZORRO_NCFGOUT(ZORRO_NCFGOUT),
@@ -233,7 +322,6 @@ module zz9000_ps_wrapper
         .ZORRO_NFCS(ZORRO_NFCS),
         .ZORRO_NIORST(ZORRO_NIORST),
         .ZORRO_NLDS(ZORRO_NLDS),
-        .ZORRO_NMTCR(ZORRO_NMTCR),
         .ZORRO_NSLAVE(ZORRO_NSLAVE),
         .ZORRO_NUDS(ZORRO_NUDS),
         .ZORRO_READ(ZORRO_READ));

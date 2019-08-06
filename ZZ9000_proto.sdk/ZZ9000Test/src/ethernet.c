@@ -37,7 +37,7 @@ static XScuGic IntcInstance;
 #define EMACPS_SLCR_DIV_MASK	0xFC0FC0FF
 
 static s32 GemVersion;
-static char EmacPsMAC[6] = {0xde,0xad,0xca,0xff,0xe2,0x42};
+uint8_t EmacPsMAC[6] = {0x68,0x82,0xf2,0x00,0x01,0x00};
 
 static volatile s32 DeviceErrors = 0;
 static volatile u32 FramesTx = 0;
@@ -347,65 +347,62 @@ static void XEmacPsSendHandler(void *Callback)
 	u32 status = XEmacPs_ReadReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_TXSR_OFFSET);
 	XEmacPs_WriteReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_TXSR_OFFSET, status);
 
-	printf("XEMACPS_TXSR status: %lu\n", status);
+	//printf("XEMACPS_TXSR status: %lu\n", status);
 
-	//if (status!=0) {
-		XEmacPs_BdRingFromHwTx(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, &BdTxPtr);
-		status = XEmacPs_BdRingFree(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, BdTxPtr);
+	XEmacPs_BdRingFromHwTx(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, &BdTxPtr);
+	status = XEmacPs_BdRingFree(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, BdTxPtr);
 
-		if (status != XST_SUCCESS) {
-			printf("XEmacPs_BdRingFree error: %lu\n",status);
-		}
+	if (status != XST_SUCCESS) {
+		printf("XEmacPs_BdRingFree error: %lu\n",status);
+		return;
+	}
 
-		u32* bd=(u32*)BdTxPtr;
-		bd++;
-		*bd = XEMACPS_TXBUF_WRAP_MASK;
-		*bd |= XEMACPS_TXBUF_USED_MASK;
-		//dmb();
-		//dsb();
-	//} else {
-		// not sure what status 0 means, transmit complete?
-	//}
+    //XEmacPs_BdSetStatus(BdTxPtr, XEMACPS_TXBUF_WRAP_MASK|XEMACPS_TXBUF_USED_MASK);
+    XEmacPs_BdSetStatus(BdTxPtr, XEMACPS_TXBUF_USED_MASK);
+
 	FramesTx++;
 }
 
 #define XEMACPS_BD_TO_INDEX(ringptr, bdptr)				\
 	(((u32)bdptr - (u32)(ringptr)->BaseBdAddr) / (ringptr)->Separation)
 
-static u16 frame_serial = 0;
+static volatile u16 frame_serial = 0;
+static u32 frames_received = 0;
 
 static void XEmacPsRecvHandler(void *Callback)
 {
 	XEmacPs* EmacPsInstancePtr = (XEmacPs *) Callback;
+
 	XEmacPs_BdRing* rxring = &(XEmacPs_GetRxRing(EmacPsInstancePtr));
 	XEmacPs_Bd* rxbdset, *cur_bd_ptr;
 
-	u32 status = XEmacPs_ReadReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET);
-	XEmacPs_WriteReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET, status);
-
-	//printf("EMAC: RECV %d rxring: %p\n", FramesRx, rxring);
-
-	frame_serial++;
-
 	int num_rx_bufs = XEmacPs_BdRingFromHwRx(rxring, 1, &rxbdset);
+
+	// we immediately process the incoming frame
+	// main task will then signal the Amiga via interrupt
+	// driver on Amiga side will call ethernet_receive_frame after copying the frame
+	// and this will free up the EmacPS receive buffer again.
+
 	if (num_rx_bufs > 0) {
 		//printf("EMAC: num_rx_bufs %d\n", num_rx_bufs);
 
 		cur_bd_ptr = rxbdset;
 
 		for (int i=0; i<num_rx_bufs; i++) {
+			frame_serial++;
+
 			u32 bd_idx = XEMACPS_BD_TO_INDEX(rxring, cur_bd_ptr);
 			int rx_bytes = XEmacPs_BdGetLength(cur_bd_ptr);
 
-			printf("EMAC: RX: %d [%d] bd_idx: %d\n", frame_serial, rx_bytes, bd_idx);
+			//printf("EMAC: RX: %d [%d] bd_idx: %d\n", frame_serial, rx_bytes, bd_idx);
 
 			Xil_DCacheInvalidateRange((UINTPTR)RxFrame, sizeof(EthernetFrame));
 
 			// store size in big endian
-			*(RxFrame-4) = (rx_bytes&0xff00)>>8;
-			*(RxFrame-3) = (rx_bytes&0xff);
-			*(RxFrame-2) = (frame_serial&0xff00)>>8;
-			*(RxFrame-1) = (frame_serial&0xff);
+			*(RxFrame+RX_FRAME_PAD)   = (rx_bytes&0xff00)>>8;
+			*(RxFrame+RX_FRAME_PAD+1) = (rx_bytes&0xff);
+			*(RxFrame+RX_FRAME_PAD+2) = (frame_serial&0xff00)>>8;
+			*(RxFrame+RX_FRAME_PAD+3) = (frame_serial&0xff);
 			/*for (int i=0; i<rx_bytes; i++) {
 				int y = i;
 				printf("%02x",RxFrame[y]);
@@ -417,32 +414,70 @@ static void XEmacPsRecvHandler(void *Callback)
 			cur_bd_ptr = XEmacPs_BdRingNext(rxring, cur_bd_ptr);
 		}
 
+		frames_received++;
+
 		int Status = XEmacPs_BdRingFree(rxring, 1, rxbdset);
 		if (Status != XST_SUCCESS) {
 			printf("EMAC: Error freeing RxBDs\n");
 		}
-		Status = XEmacPs_BdRingAlloc(rxring, 1, &rxbdset);
-		if (Status != XST_SUCCESS) {
-			printf("EMAC: Error allocating RxBD\n");
-		}
-		XEmacPs_BdSetAddressRx(rxbdset, RxFrame);
+	}
+
+}
+
+void ethernet_receive_frame() {
+	XEmacPs* EmacPsInstancePtr = &EmacPsInstance;
+
+	XEmacPs_BdRing* rxring = &(XEmacPs_GetRxRing(EmacPsInstancePtr));
+	XEmacPs_Bd* rxbdset;
+
+	int Status = XEmacPs_BdRingAlloc(rxring, 1, &rxbdset);
+	if (Status != XST_SUCCESS) {
+		printf("EMAC: Error allocating RxBD\n");
+	} else {
+		XEmacPs_BdSetAddressRx(rxbdset, RxFrame); // FIXME redundant?
 		XEmacPs_BdClearRxNew(rxbdset);
 
-	    XEmacPs_BdSetStatus(rxbdset, XEMACPS_RXBUF_WRAP_MASK);
+		//XEmacPs_BdSetStatus(rxbdset, XEMACPS_RXBUF_WRAP_MASK);
 		Status = XEmacPs_BdRingToHw(rxring, 1, rxbdset);
 		if (Status != XST_SUCCESS) {
 			printf("EMAC: Error committing RxBD to HW\n");
 		}
-
 	}
-	FramesRx++;
+
+	u32 status = XEmacPs_ReadReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET);
+	XEmacPs_WriteReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET, status);
+}
+
+
+u32 get_frames_received() {
+	return frames_received;
+}
+
+static int frames_dropped = 0;
+
+uint8_t* ethernet_get_mac_address_ptr() {
+	return &EmacPsMAC;
+}
+
+void ethernet_update_mac_address() {
+	XEmacPs* EmacPsInstancePtr = &EmacPsInstance;
+
+	printf("Ethernet: New MAC address %x %x %x %x %x %x\n",
+			EmacPsMAC[0],EmacPsMAC[1],EmacPsMAC[2],EmacPsMAC[3],EmacPsMAC[4],EmacPsMAC[5]);
+
+	XEmacPs_Stop(EmacPsInstancePtr);
+
+	int Status = XEmacPs_SetMacAddress(EmacPsInstancePtr, EmacPsMAC, 1);
+	if (Status != XST_SUCCESS) {
+		printf("EMAC: Error setting MAC address\n");
+	}
+
+	XEmacPs_Start(EmacPsInstancePtr);
 }
 
 static void XEmacPsErrorHandler(void *Callback, u8 Direction, u32 ErrorWord)
 {
 	//XEmacPs *EmacPsInstancePtr = (XEmacPs *) Callback;
-
-	printf("EMAC: ERROR!\n");
 
 	/*
 	 * Increment the counter so that main thread knows something
@@ -459,7 +494,11 @@ static void XEmacPsErrorHandler(void *Callback, u8 Direction, u32 ErrorWord)
 			printf("EMAC: Receive over run\n");
 		}
 		if (ErrorWord & XEMACPS_RXSR_BUFFNA_MASK) {
-			printf("EMAC: Receive buffer not available\n");
+			//printf("EMAC: Receive buffer not available\n");
+			// signal to host that frames are available
+			frames_received++;
+			frames_dropped++;
+			//printf("#%d\n",frames_dropped);
 		}
 		break;
 	case XEMACPS_SEND:
@@ -892,13 +931,13 @@ static LONG EmacPsSetupIntrSystem(XScuGic *IntcInstancePtr, XEmacPs *EmacPsInsta
 	return XST_SUCCESS;
 }
 
-void ethernet_send_frame(u16 frame_size) {
+u16 ethernet_send_frame(u16 frame_size) {
 	XEmacPs* EmacPsInstancePtr = &EmacPsInstance;
 	XEmacPs_Bd *BdTxPtr;
 
 	u32 old_frames_tx = FramesTx;
 
-	printf("ethernet_send_frame: %lu %d\n",old_frames_tx,frame_size);
+	//printf("ethernet_send_frame: %lu %d\n",old_frames_tx,frame_size);
 
 	Xil_DCacheInvalidateRange((UINTPTR)TxFrame, sizeof(EthernetFrame));
 
@@ -914,6 +953,10 @@ void ethernet_send_frame(u16 frame_size) {
 
 	if (Status != XST_SUCCESS) {
 		printf("ERROR: BdRingAlloc error: %ld\n",Status);
+
+		// lets unstick this
+		XEmacPs_BdRingFree(&(XEmacPs_GetTxRing(EmacPsInstancePtr)), 1, BdTxPtr);
+		return 2;
 	}
 
 	XEmacPs_BdSetAddressTx(BdTxPtr, TxFrame);
@@ -925,25 +968,24 @@ void ethernet_send_frame(u16 frame_size) {
 
 	if (Status != XST_SUCCESS) {
 		printf("ERROR: BdRingToHw error: %ld\n",Status);
+		return 3;
 	}
 
 	Xil_DCacheFlushRange((UINTPTR)BdTxPtr, 128);
 
 	XEmacPs_Transmit(EmacPsInstancePtr);
 
-	XEmacPs_WriteReg(EmacPsInstance.Config.BaseAddress,
-		XEMACPS_NWCTRL_OFFSET,
-		XEmacPs_ReadReg(EmacPsInstance.Config.BaseAddress, XEMACPS_NWCTRL_OFFSET) |
-		XEMACPS_NWCTRL_STARTTX_MASK);
-
 	u32 counter = 0;
 	while (old_frames_tx == FramesTx) {
 		counter++;
-		if (counter>100000) {
+		if (counter>1000) {
 			printf("ERROR: timeout in ethernet_send_frame waiting for tx!\n");
-			break;
+			return 4;
 		}
 	}
+
+	// all good
+	return 0;
 }
 
 #endif

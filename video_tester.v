@@ -170,13 +170,19 @@ always @(posedge m_axis_vid_aclk)
 reg [31:0] control_data_in;
 reg [7:0] control_op_in;
 reg control_interlace_in;
+reg [31:0] control_data_in2;
+reg [7:0] control_op_in2;
+reg control_interlace_in2;
 
 // control input
 always @(posedge m_axis_vid_aclk)
 begin
-  control_op_in        <= control_op;
-  control_data_in      <= control_data;
-  control_interlace_in <= control_interlace;
+  control_op_in2        <= control_op;
+  control_op_in        <= control_op_in2;
+  control_data_in2      <= control_data;
+  control_data_in      <= control_data_in2;
+  control_interlace_in2 <= control_interlace;
+  control_interlace_in <= control_interlace_in2;
   
   if (next_input_state==0) begin
     vsync_request <= 0;

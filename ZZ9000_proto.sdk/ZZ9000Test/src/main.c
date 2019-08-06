@@ -12,10 +12,21 @@
 #include "xaxivdma.h"
 #include "xil_cache.h"
 #include "xclk_wiz.h"
+#include "xil_exception.h"
 
 #include "gfx.h"
 #include "ethernet.h"
 #include "xgpiops.h"
+
+#include "xil_misc_psreset_api.h"
+
+#define A9_CPU_RST_CTRL		(XSLCR_BASEADDR + 0x244)
+#define A9_RST1_MASK 		0x00000002
+#define A9_CLKSTOP1_MASK	0x00000020
+//#define CPU1_CATCH			0x00000024
+
+#define XSLCR_LOCK_ADDR		(XSLCR_BASEADDR + 0x4)
+#define XSLCR_LOCK_CODE		0x0000767B
 
 typedef u8 AddressType;
 #define IIC_DEVICE_ID	XPAR_XIICPS_0_DEVICE_ID
@@ -107,11 +118,10 @@ static u8 sii9022_init[] = {
 };
 
 void disable_reset_out() {
-	int Status;
     XGpioPs Gpio;
 	XGpioPs_Config *ConfigPtr;
 	ConfigPtr = XGpioPs_LookupConfig(GPIO_DEVICE_ID);
-	Status = XGpioPs_CfgInitialize(&Gpio, ConfigPtr, ConfigPtr->BaseAddr);
+	XGpioPs_CfgInitialize(&Gpio, ConfigPtr, ConfigPtr->BaseAddr);
 	int output_pin = 7;
 
 	XGpioPs_SetDirectionPin(&Gpio, output_pin, 1);
@@ -130,7 +140,7 @@ void hdmi_ctrl_init() {
 	status = XIicPs_CfgInitialize(&Iic, config, config->BaseAddress);
 	printf("XIicPs_CfgInitialize: %d\n", status);
 	usleep(10000);
-	printf("XIicPs is ready: %x\n", Iic.IsReady);
+	printf("XIicPs is ready: %lx\n", Iic.IsReady);
 
 	status = XIicPs_SelfTest(&Iic);
 	printf("XIicPs_SelfTest: %x\n", status);
@@ -419,60 +429,95 @@ void pixelclock_init(int mhz) {
 // FIXME!
 #define MNTZ_BASE_ADDR 0x43C00000
 
-#define MNTZORRO_S00_AXI_SLV_REG0_OFFSET 0
-#define MNTZORRO_S00_AXI_SLV_REG1_OFFSET 4
-#define MNTZORRO_S00_AXI_SLV_REG2_OFFSET 8
-#define MNTZORRO_S00_AXI_SLV_REG3_OFFSET 12
+#define MNTZORRO_REG0 0
+#define MNTZORRO_REG1 4
+#define MNTZORRO_REG2 8
+#define MNTZORRO_REG3 12
 
-#define MNTZORRO_mReadReg(BaseAddress, RegOffset) \
+#define mntzorro_read(BaseAddress, RegOffset) \
     Xil_In32((BaseAddress) + (RegOffset))
 
-#define MNTZORRO_mWriteReg(BaseAddress, RegOffset, Data) \
+#define mntzorro_write(BaseAddress, RegOffset, Data) \
   	Xil_Out32((BaseAddress) + (RegOffset), (u32)(Data))
 
-void init_video_formatter(uint32_t base_addr, int colormode, int width, int height, int htotal, int vtotal, int hss, int hse, int vss, int vse, int polarity) {
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, colormode);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000001); // OP_COLORMODE
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, (vtotal<<16)|htotal);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000006); // OP_MAX (vmax | hmax)
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, (height<<16)|width);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000002); // OP_DIMENSIONS (height | width)
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, (hss<<16)|hse);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000007); // OP_HS (hsync_start | hsync_end)
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, (vss<<16)|vse);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000008); // OP_VS (vsync_start | vsync_end)
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, polarity);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf000000a); // OP_POLARITY
-	usleep(10000);
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // clear
-	MNTZORRO_mWriteReg(base_addr, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0); // clear
+void init_video_formatter(uint32_t base_addr, int scalemode, int colormode, int width, int height, int htotal, int vtotal, int hss, int hse, int vss, int vse, int polarity) {
+	mntzorro_write(base_addr, MNTZORRO_REG3, scalemode);
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000004); // OP_SCALE
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
+	usleep(1);
+
+	mntzorro_write(base_addr, MNTZORRO_REG3, (height<<16)|width);
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000002); // OP_DIMENSIONS (height | width)
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
+	usleep(1);
+
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG3, colormode);
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000001); // OP_COLORMODE
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
+	usleep(1);
+
+	mntzorro_write(base_addr, MNTZORRO_REG3, (vtotal<<16)|htotal);
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000006); // OP_MAX (vmax | hmax)
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
+	usleep(1);
+
+	mntzorro_write(base_addr, MNTZORRO_REG3, (hss<<16)|hse);
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000007); // OP_HS (hsync_start | hsync_end)
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
+	usleep(1);
+
+	mntzorro_write(base_addr, MNTZORRO_REG3, (vss<<16)|vse);
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000008); // OP_VS (vsync_start | vsync_end)
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
+	usleep(1);
+
+	mntzorro_write(base_addr, MNTZORRO_REG3, polarity);
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x8000000a); // OP_POLARITY
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
+	usleep(1);
+	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
+	usleep(1);
 }
 
 static int video_system_init_once = 0;
@@ -500,19 +545,6 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 	init_vdma(hres, vres, hdiv, vdiv);
 	printf("...done.\n");
 
-    // FIXME DEBUG ONLY
-    /*printf("init_video_formatter()...\n");
-    // 25.17 640 656 752 800 480 490 492 525
-    if (hres==640 && vres==480) {
-    	printf("640x480...\n");
-    	init_video_formatter(MNTZ_BASE_ADDR, 2, hres, vres, htotal, vtotal, 656, 752, 490, 492, 0);
-    }
-    if (hres==1280 && vres==720) {
-    	printf("1280x720...\n");
-    	init_video_formatter(MNTZ_BASE_ADDR, 2, hres, vres, htotal, vtotal, 1720, 1760, 725, 730, 0);
-    }
-    printf("done.\n");*/
-
     vmode_hsize = hres;
     vmode_vsize = vres;
 
@@ -529,10 +561,10 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 #define MNT_FB_BASE     0x010000
 #define MNT_BASE_MODE   			MNT_REG_BASE+0x02
 #define MNT_BASE_SCALEMODE   		MNT_REG_BASE+0x04
-#define MNT_BASE_COLORMODE   		MNT_REG_BASE+0x0e
-#define MNT_BASE_RECTOP 			MNT_REG_BASE+0x10
 #define MNT_BASE_PAN_HI 			MNT_REG_BASE+0x0a
 #define MNT_BASE_PAN_LO 			MNT_REG_BASE+0x0c
+#define MNT_BASE_HDIV   			MNT_REG_BASE+0x0e
+#define MNT_BASE_RECTOP 			MNT_REG_BASE+0x10
 #define MNT_BASE_BLIT_SRC_HI 		MNT_REG_BASE+0x28
 #define MNT_BASE_BLIT_SRC_LO 		MNT_REG_BASE+0x2a
 #define MNT_BASE_BLIT_DST_HI 		MNT_REG_BASE+0x2c
@@ -543,34 +575,28 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 #define MNT_BASE_VSIZE 		MNT_REG_BASE+0x36
 
 #define MNT_BASE_ETH_TX		MNT_REG_BASE+0x80
+#define MNT_BASE_ETH_RX		MNT_REG_BASE+0x82
+#define MNT_BASE_ETH_MAC_HI  MNT_REG_BASE+0x84
+#define MNT_BASE_ETH_MAC_HI2 MNT_REG_BASE+0x86
+#define MNT_BASE_ETH_MAC_LO  MNT_REG_BASE+0x88
 #define MNT_BASE_RUN_HI		MNT_REG_BASE+0x90
 #define MNT_BASE_RUN_LO		MNT_REG_BASE+0x92
-#define MNT_BASE_RUN_ARG0   MNT_REG_BASE+0x94
-
-void testfunc() {
-	printf("testfunc!\n");
-}
-
-uint32_t mnt_alloc_ptr = 0x10000000;
-
-uint8_t* mnt_malloc(uint32_t size) {
-	uint8_t* res = (uint8_t*)mnt_alloc_ptr;
-	if (mnt_alloc_ptr+size>0x20000000) {
-		return 0;
-	}
-	mnt_alloc_ptr=(mnt_alloc_ptr+size+256)&0xffffff00;
-	printf("mnt_malloc %ld at %p\n",size,res);
-	return res;
-}
-
-void mnt_free(uint8_t* addr) {
-	// NYI
-}
+#define MNT_BASE_RUN_ARGC   MNT_REG_BASE+0x94
+#define MNT_BASE_RUN_ARG0   MNT_REG_BASE+0x96
+#define MNT_BASE_RUN_ARG1   MNT_REG_BASE+0x98
+#define MNT_BASE_RUN_ARG2   MNT_REG_BASE+0x9a
+#define MNT_BASE_RUN_ARG3   MNT_REG_BASE+0x9c
+#define MNT_BASE_RUN_ARG4   MNT_REG_BASE+0x9e
+#define MNT_BASE_RUN_ARG5   MNT_REG_BASE+0xa0
+#define MNT_BASE_RUN_ARG6   MNT_REG_BASE+0xa2
+#define MNT_BASE_RUN_ARG7   MNT_REG_BASE+0xa4
+#define MNT_BASE_EVENT_SERIAL MNT_REG_BASE+0xb0
+#define MNT_BASE_EVENT_CODE   MNT_REG_BASE+0xb2
 
 void handle_amiga_reset() {
     fb_fill();
 
-    framebuffer_pan_offset=0xe00000; //+0x1c200; // FIXME select sane offset and coordinate with verilog code
+    framebuffer_pan_offset=0x00e00000; //+0x1c200; // FIXME select sane offset and coordinate with verilog code
 
     printf("    _______________   ___   ___   ___  \n");
     printf("   |___  /___  / _ \\ / _ \\ / _ \\ / _ \\ \n");
@@ -579,31 +605,175 @@ void handle_amiga_reset() {
     printf("    / /__ / /__  / /| |_| | |_| | |_| |\n");
     printf("   /_____/_____|/_/  \\___/ \\___/ \\___/ \n\n");
 
-    /*printf("mnt_malloc = %p;\n",mnt_malloc);
-    printf("mnt_free = %p;\n",mnt_free);
-    printf("memset = %p;\n",memset);
-    printf("memcpy = %p;\n",memcpy);
-    printf("printf = %p;\n",printf);
-    printf("puts = %p;\n",puts);
-    printf("sin = %p;\n",sin);
-    printf("cos = %p;\n",cos);
-    printf("sqrt = %p;\n",sqrt);*/
-
-    video_system_init(720, 576, 864, 625, 27, 50, 1, 2); // <--- default
-    //video_system_init(640, 480, 800, 525, 25, 60, 1, 2);
-    //video_system_init(1280, 720, 1980, 750, 75, 60, 1, 2);
-
 	usleep(10000);
 
-	init_video_formatter(MNTZ_BASE_ADDR, 2, 720, 576, 864, 625, 732, 796, 581, 586, 1);
+	init_video_formatter(MNTZ_BASE_ADDR, 2, 2, 720, 576, 864, 625, 732, 796, 581, 586, 1);
+	video_system_init(720, 576, 864, 625, 27, 50, 1, 2); // <--- default
+
+	//init_video_formatter(MNTZ_BASE_ADDR, 2, 1280, 720, 1980, 750, 1720, 1760, 725, 730, 0);
+    //video_system_init(1280, 720, 1980, 750, 75, 60, 1, 2);
+    //video_system_init(640, 480, 800, 525, 25, 60, 1, 2);
 
     // cool down a bit after reset
-	usleep(100000);
+	//usleep(500000);
+
+	// vertical alignment
+	mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG3, 1);
+	usleep(1);
+	mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, 0x80000000+0x5); // OP_VSYNC
+	usleep(1);
+	mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG3, 0);
+	usleep(1);
+	mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, 0x80000000); // NOP
+	usleep(1);
+	mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, 0); // NOP
+	usleep(1);
+
+    printf("init_ethernet()...\n");
+    init_ethernet();
+    printf("... init_ethernet() done.\n");
+
+}
+
+uint16_t arm_app_output_event_serial = 0;
+uint16_t arm_app_output_event_code = 0;
+char arm_app_output_event_ack = 0;
+uint16_t arm_app_output_events_blocking = 0;
+uint16_t arm_app_output_putchar_to_events = 0;
+uint16_t arm_app_input_event_serial = 0;
+uint16_t arm_app_input_event_code = 0;
+char arm_app_input_event_ack = 0;
+
+uint32_t arm_app_output_events_timeout = 100000;
+
+void arm_app_put_event_code(uint16_t code) {
+	arm_app_output_event_code = code;
+	arm_app_output_event_ack = 0;
+	arm_app_output_event_serial++;
+}
+
+char arm_app_output_event_acked() {
+	return arm_app_output_event_ack;
+}
+
+void arm_app_set_output_events_blocking(char blocking) {
+	arm_app_output_events_blocking = blocking;
+}
+
+void arm_app_set_output_putchar_to_events(char putchar_enabled) {
+	arm_app_output_putchar_to_events = putchar_enabled;
+}
+
+uint16_t arm_app_get_event_serial() {
+	return arm_app_input_event_serial;
+}
+
+uint16_t arm_app_get_event_code() {
+	arm_app_input_event_ack = 1;
+	return arm_app_input_event_code;
+}
+
+int __attribute__ ((visibility ("default"))) _putchar(char c) {
+	if (arm_app_output_putchar_to_events) {
+		if (arm_app_output_events_blocking) {
+			for (uint32_t i=0; i<arm_app_output_events_timeout; i++) {
+				usleep(1);
+				if (arm_app_output_event_ack) break;
+			}
+		}
+		arm_app_put_event_code(c);
+	}
+	return putchar(c);
+}
+
+struct ZZ9K_ENV {
+  uint32_t api_version;
+  uint32_t argv[8];
+  uint32_t argc;
+
+  int      (*fn_putchar)(char);
+  void     (*fn_set_output_putchar_to_events)(char);
+  void     (*fn_set_output_events_blocking)(char);
+  void     (*fn_put_event_code)(uint16_t);
+  uint16_t (*fn_get_event_serial)();
+  uint16_t (*fn_get_event_code)();
+  char     (*fn_output_event_acked)();
+};
+
+void arm_exception_handler(void *callback);
+void arm_exception_handler_illinst(void *callback);
+
+
+struct ZZ9K_ENV arm_run_env;
+void (*trampoline)(struct ZZ9K_ENV* env);
+int core2_execute = 0;
+
+uint32_t saved_sp = 0;
+
+// exexcuted on core1
+void core2_loop() {
+	//0xFFFFFFF0
+
+	//printf("[CPU1] init.\n");
+
+	asm("mov	r0, r0");
+	asm("mrc	p15, 0, r1, c1, c0, 2");		/* read cp access control register (CACR) into r1 */
+	asm("orr	r1, r1, #(0xf << 20)");		/* enable full access for p10 & p11 */
+	asm("mcr	p15, 0, r1, c1, c0, 2");		/* write back into CACR */
+
+	// enable FPU
+	asm("fmrx	r1, FPEXC");			/* read the exception register */
+	asm("orr	r1,r1, #0x40000000");		/* set VFP enable bit, leave the others in orig state */
+	asm("fmxr	FPEXC, r1");			/* write back the exception register */
+
+	uint32_t* addr = 0;
+	addr[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
+	addr[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
+
+	// enable flow prediction
+	asm("mrc	p15,0,r0,c1,c0,0");		/* flow prediction enable */
+	asm("orr	r0, r0, #(0x01 << 11)");		/* #0x8000 */
+	asm("mcr	p15,0,r0,c1,c0,0");
+
+	asm("mrc	p15,0,r0,c1,c0,1");		/* read Auxiliary Control Register */
+	asm("orr	r0, r0, #(0x1 << 2)");		/* enable Dside prefetch */
+	asm("orr	r0, r0, #(0x1 << 1)");		/* enable L2 Prefetch hint */
+	asm("mcr	p15,0,r0,c1,c0,1");		/* write Auxiliary Control Register */
+
+	// stack
+	asm("mov SP, #0x06000000");
+
+	// FIXME these don't seem to do anything
+    Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_RESET, (Xil_ExceptionHandler)arm_exception_handler, NULL);
+    Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_DATA_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
+    Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_PREFETCH_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
+    Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_UNDEFINED_INT, (Xil_ExceptionHandler)arm_exception_handler_illinst, NULL);
+
+	while (1) {
+		while (!core2_execute) {
+			usleep(1);
+		}
+		core2_execute = 0;
+		printf("[CPU1] executing at %p.\n",trampoline);
+		dmb();
+		dsb();
+		isb();
+		asm("push {r0-r12}");
+		// save our stack pointer in 0x10000
+		asm("mov r0, #0x00010000");
+		asm("str sp, [r0]");
+
+		trampoline(&arm_run_env);
+
+		asm("mov r0, #0x00010000");
+		asm("ldr sp, [r0]");
+		asm("pop {r0-r12}");
+	}
 }
 
 int main()
 {
-	char* zstates[53] = {
+	const char* zstates[53] = {
 		"RESET   ",
 		"Z2_CONF ",
 		"Z2_IDLE ",
@@ -662,14 +832,19 @@ int main()
     init_platform();
     Xil_DCacheDisable();
 
+    _putchar('\n');
+
+    Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_DATA_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
+    Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_PREFETCH_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
+    Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_UNDEFINED_INT, (Xil_ExceptionHandler)arm_exception_handler_illinst, NULL);
+
     disable_reset_out();
 
-    framebuffer=(u32*)0x200000;
+    framebuffer=(u32*)0x00200000;
     int need_req_ack = 0;
 	u8* mem = (u8*)framebuffer;
 
-    // registers
-
+    // blitter etc
     uint16_t rect_x1=0;
     uint16_t rect_x2=100;
     uint16_t rect_x3=100;
@@ -680,21 +855,46 @@ int main()
     uint32_t rect_rgb=0;
     uint32_t blitter_colormode=MNTVA_COLOR_32BIT;
     uint16_t hdiv=1, vdiv=1;
-    uint32_t arm_run_address=0;
-    uint16_t arm_run_arg0=0;
 
+    // ARM app run environment
+    arm_run_env.api_version = 1;
+    arm_run_env.fn_putchar = _putchar;
+    arm_run_env.fn_get_event_code = arm_app_get_event_code;
+    arm_run_env.fn_get_event_serial = arm_app_get_event_serial;
+    arm_run_env.fn_output_event_acked = arm_app_output_event_acked;
+    arm_run_env.fn_put_event_code = arm_app_put_event_code;
+    arm_run_env.fn_set_output_events_blocking = arm_app_set_output_events_blocking;
+    arm_run_env.fn_set_output_putchar_to_events = arm_app_set_output_putchar_to_events;
+
+    arm_run_env.argc = 0;
+    uint32_t arm_run_address=0;
+
+    // ethernet state
+    uint32_t old_frames_received = 0;
+    uint16_t ethernet_send_result = 0;
+
+    // zorro state
     u32 old_zstate;
     u32 zstate_raw;
     int interlace_old = 0;
 
     handle_amiga_reset();
 
-    printf("init_ethernet()...\n");
-    init_ethernet();
-    printf("... init_ethernet() done.\n");
+    printf("launch cpu1...\n");
+	uint32_t* core2_addr=(uint32_t*)0xFFFFFFF0;
+	uint32_t* core2_addr2=(uint32_t*)0x100; // catch
+	*core2_addr = (uint32_t)core2_loop;
+
+	core2_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
+	core2_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
+
+	asm("sev");
+	printf("cpu1 now idling.\n");
+
+	int intrs = 0;
 
     while(1) {
-		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
+		u32 zstate = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG3);
 		zstate_raw = zstate;
         u32 writereq   = (zstate&(1<<31));
         u32 readreq    = (zstate&(1<<30));
@@ -728,8 +928,8 @@ int main()
 		}*/
 
 		if (writereq) {
-			u32 zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
-			u32 zdata  = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET);
+			u32 zaddr = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG0);
+			u32 zdata  = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG1);
 			//uint32_t count_writes = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
 
 	        u32 ds3 = (zstate_raw&(1<<29));
@@ -740,7 +940,36 @@ int main()
 	        //printf("WRTE: %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
 
 			if (zaddr>0x10000000) {
-				printf("ERRW illegal address %p\n",zaddr);
+				printf("ERRW illegal address %08lx\n",zaddr);
+			}
+			else if (zaddr>=MNT_FB_BASE || zaddr>=MNT_REG_BASE+0x2000) {
+				u8* ptr = mem;
+
+				if (zaddr>=MNT_FB_BASE) {
+					ptr = mem+zaddr-MNT_FB_BASE;
+				}
+				else if (zaddr<MNT_REG_BASE+0x8000) {
+					ptr = (u8*)(RX_FRAME_ADDRESS+RX_FRAME_PAD+zaddr-(MNT_REG_BASE+0x2000));
+					printf("ERXF write: %08lx\n",(u32)ptr);
+				}
+				else if (zaddr<MNT_REG_BASE+0x10000) {
+					ptr = (u8*)(TX_FRAME_ADDRESS+zaddr-(MNT_REG_BASE+0x8000));
+					//printf("ETXF write: %08lx\n",(u32)ptr);
+				}
+
+				// FIXME cache this
+				u32 z3 = (zstate_raw&(1<<25));
+
+				if (z3) {
+					if (ds3) ptr[0] = zdata>>24;
+					if (ds2) ptr[1] = zdata>>16;
+					if (ds1) ptr[2] = zdata>>8;
+					if (ds0) ptr[3] = zdata;
+				} else {
+					// swap bytes
+					if (ds1) ptr[0] = zdata>>8;
+					if (ds0) ptr[1] = zdata;
+				}
 			}
 			else if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
 				// register area
@@ -823,24 +1052,19 @@ int main()
 					}
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x16) {
-					// fill triangle
-					/*Vec2 a = {rect_x1, rect_y1};
-					Vec2 b = {rect_x2, rect_y2};
-					Vec2 c = {rect_x3, rect_y3};
-					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
-					fill_triangle(a,b,c,rect_rgb);*/
+					// NYI
 				}
 				else if (zaddr==MNT_BASE_BLITTER_COLORMODE) {
 					//set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
 					blitter_colormode = zdata;
 				}
 				else if (zaddr==MNT_BASE_SCALEMODE) {
-					printf("VDIV change: %d -> %d\n",vdiv,zdata);
+					printf("VDIV change: %d -> %ld\n",vdiv,zdata);
 					vdiv=zdata;
 				}
 
 				else if (zaddr==MNT_BASE_MODE) {
-					printf("Mode change: %d\n",zdata);
+					printf("Mode change: %ld\n",zdata);
 					// https://github.com/Xilinx/embeddedsw/blob/master/XilinxProcessorIPLib/drivers/vtc/src/xvtc.c
 
 					if (zdata==0) {
@@ -862,100 +1086,195 @@ int main()
 					}
 				}
 				else if (zaddr==MNT_BASE_HSIZE) {
-					printf("vmode_hsize change: %d -> %d\n",vmode_hsize,zdata);
+					printf("vmode_hsize change: %ld -> %ld\n",vmode_hsize,zdata);
 					vmode_hsize=zdata;
 					init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
 				}
 				else if (zaddr==MNT_BASE_VSIZE) {
-					printf("vmode_vsize change: %d -> %d\n",vmode_vsize,zdata);
+					printf("vmode_vsize change: %ld -> %ld\n",vmode_vsize,zdata);
 					vmode_vsize=zdata;
 					init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
 				}
-				else if (zaddr==MNT_BASE_COLORMODE) {
-					printf("hdiv change: %d -> %d\n",hdiv,zdata);
+				else if (zaddr==MNT_BASE_HDIV) {
+					printf("hdiv change: %d -> %ld\n",hdiv,zdata);
 					hdiv=zdata;
 				}
 				else if (zaddr==MNT_BASE_VIDEOCAP_MODE) {
 					// unused
 				}
 				else if (zaddr==MNT_BASE_ETH_TX) {
-					ethernet_send_frame(zdata);
+					ethernet_send_result = ethernet_send_frame(zdata);
+					//printf("SEND frame sz: %ld res: %d\n",zdata,ethernet_send_result);
+				}
+				else if (zaddr==MNT_BASE_ETH_RX) {
+					//printf("RECV eth frame sz: %ld\n",zdata);
+					ethernet_receive_frame();
+				}
+				else if (zaddr==MNT_BASE_ETH_MAC_HI) {
+					uint8_t* mac = ethernet_get_mac_address_ptr();
+					mac[0] = (zdata&0xff00)>>8;
+					mac[1] = (zdata&0x00ff);
+				}
+				else if (zaddr==MNT_BASE_ETH_MAC_HI2) {
+					uint8_t* mac = ethernet_get_mac_address_ptr();
+					mac[2] = (zdata&0xff00)>>8;
+					mac[3] = (zdata&0x00ff);
+				}
+				else if (zaddr==MNT_BASE_ETH_MAC_LO) {
+					uint8_t* mac = ethernet_get_mac_address_ptr();
+					mac[4] = (zdata&0xff00)>>8;
+					mac[5] = (zdata&0x00ff);
+					ethernet_update_mac_address();
 				}
 				else if (zaddr==MNT_BASE_RUN_HI) {
 					arm_run_address=((u32)zdata)<<16;
 				}
 				else if (zaddr==MNT_BASE_RUN_LO) {
-					/*arm_run_address|=zdata;
+					// TODO checksum?
+					arm_run_address|=zdata;
+
+					*core2_addr  = (uint32_t)core2_loop;
+					core2_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
+					core2_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
+					dmb();
+
 					printf("[ARM_RUN] %lx\n",arm_run_address);
-					void (*trampoline)(uint16_t x) = arm_run_address;
-					trampoline(arm_run_arg0);*/
+					if (arm_run_address>0) {
+						trampoline = (void (*)(struct ZZ9K_ENV*))arm_run_address;
+						printf("[ARM_RUN] signaling second core.\n");
+						core2_execute = 1;
+					} else {
+						trampoline = 0;
+						core2_execute = 0;
+					}
+
+					// sequence to reset cpu1 taken from https://xilinx-wiki.atlassian.net/wiki/spaces/A/pages/18842504/XAPP1079+Latest+Information
+
+			    	Xil_Out32(XSLCR_UNLOCK_ADDR, XSLCR_UNLOCK_CODE);
+			    	uint32_t RegVal = Xil_In32(A9_CPU_RST_CTRL);
+			    	RegVal |= A9_RST1_MASK;
+			    	Xil_Out32(A9_CPU_RST_CTRL, RegVal);
+			    	RegVal |= A9_CLKSTOP1_MASK;
+			    	Xil_Out32(A9_CPU_RST_CTRL, RegVal);
+			    	RegVal &= ~A9_RST1_MASK;
+					Xil_Out32(A9_CPU_RST_CTRL, RegVal);
+			    	RegVal &= ~A9_CLKSTOP1_MASK;
+					Xil_Out32(A9_CPU_RST_CTRL, RegVal);
+			    	Xil_Out32(XSLCR_LOCK_ADDR, XSLCR_LOCK_CODE);
+
+					dmb();
+					dsb();
+					isb();
+					asm("sev");
+				}
+				else if (zaddr==MNT_BASE_RUN_ARGC) {
+					arm_run_env.argc = zdata;
 				}
 				else if (zaddr==MNT_BASE_RUN_ARG0) {
-					arm_run_arg0 = zdata;
+					arm_run_env.argv[0] = ((u32)zdata)<<16;
 				}
-			}
-			else if (zaddr>=MNT_FB_BASE) {
-				u32 addr = zaddr-MNT_FB_BASE;
-			    //addr ^= 2ul; // swap words (BE -> LE)
-		        u32 z3 = (zstate_raw&(1<<25));
-
-				if (z3) {
-					if (ds3) mem[addr]   = zdata>>24;
-					if (ds2) mem[addr+1] = zdata>>16;
-					if (ds1) mem[addr+2] = zdata>>8;
-					if (ds0) mem[addr+3] = zdata;
-				} else {
-					// swap bytes
-					if (ds1) mem[addr]   = zdata>>8;
-					if (ds0) mem[addr+1] = zdata;
+				else if (zaddr==MNT_BASE_RUN_ARG1) {
+					arm_run_env.argv[0] |= zdata;
+					printf("ARG0 set: %lx\n",arm_run_env.argv[0]);
+				}
+				else if (zaddr==MNT_BASE_RUN_ARG2) {
+					arm_run_env.argv[1] = ((u32)zdata)<<16;
+				}
+				else if (zaddr==MNT_BASE_RUN_ARG3) {
+					arm_run_env.argv[1] |= zdata;
+					printf("ARG1 set: %lx\n",arm_run_env.argv[1]);
+				}
+				else if (zaddr==MNT_BASE_RUN_ARG4) {
+					arm_run_env.argv[2] = ((u32)zdata)<<16;
+				}
+				else if (zaddr==MNT_BASE_RUN_ARG5) {
+					arm_run_env.argv[2] |= zdata;
+					printf("ARG2 set: %lx\n",arm_run_env.argv[2]);
+				}
+				else if (zaddr==MNT_BASE_RUN_ARG6) {
+					arm_run_env.argv[3] = ((u32)zdata)<<16;
+				}
+				else if (zaddr==MNT_BASE_RUN_ARG7) {
+					arm_run_env.argv[3] |= zdata;
+					printf("ARG3 set: %lx\n",arm_run_env.argv[3]);
+				}
+				else if (zaddr==MNT_BASE_EVENT_CODE) {
+					arm_app_input_event_code = zdata;
+					arm_app_input_event_serial++;
+					arm_app_input_event_ack = 0;
 				}
 			}
 
 			// ack the write, set bit 31 in register 0
-			MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<31));
+			mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG0, (1<<31));
 			need_req_ack = 1;
 		}
 		else if (readreq) {
-			uint32_t zaddr = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET);
+			uint32_t zaddr = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG0);
 			//printf("READ: %08lx\n",zaddr);
+			u32 z3 = (zstate_raw&(1<<25)); // TODO cache
 
 			if (zaddr>0x10000000) {
 				printf("ERRR: illegal address %08lx\n",zaddr);
 			}
-			else if (zaddr>=MNT_REG_BASE && zaddr<MNT_FB_BASE) {
-				// read ARM "register"
-				/*if (z3) {
-					u32 b1 = mem[addr]<<24;
-					u32 b2 = mem[addr+1]<<16;
-					u32 b3 = mem[addr+2]<<8;
-					u32 b4 = mem[addr+3];
+			if (zaddr>=MNT_FB_BASE || zaddr>=MNT_REG_BASE+0x2000) {
+				u8* ptr = mem;
 
-					MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, b1|b2|b3|b4);
-				}*/
-				MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, 0);
-			}
-			else if (zaddr>=MNT_FB_BASE) {
-				u32 addr = zaddr-MNT_FB_BASE;
-			    //addr ^= 2ul; // swap words (BE -> LE)
-		        u32 z3 = (zstate_raw&(1<<25)); // highly inefficient
+				if (zaddr>=MNT_FB_BASE) {
+					ptr = mem+zaddr-MNT_FB_BASE;
+				}
+				else if (zaddr<MNT_REG_BASE+0x8000) {
+					// disable INT6 interrupt
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|0);
+
+					// FIXME driver is pummeling this address
+					ptr = (u8*)(RX_FRAME_ADDRESS+RX_FRAME_PAD+zaddr-(MNT_REG_BASE+0x2000));
+					//if (zaddr>0x2010) {
+					//	printf("ERXF read: %08lx / %08lx\n",zaddr,(u32)ptr);
+					//}
+				}
+				else if (zaddr<MNT_REG_BASE+0x10000) {
+					ptr = (u8*)(TX_FRAME_ADDRESS+zaddr-(MNT_REG_BASE+0x8000));
+					printf("ETXF read: %08lx\n",(u32)ptr);
+				}
+
 				if (z3) {
-					u32 b1 = mem[addr]<<24;
-					u32 b2 = mem[addr+1]<<16;
-					u32 b3 = mem[addr+2]<<8;
-					u32 b4 = mem[addr+3];
-
-					//printf("     '-> %08lx\n",b1|b2|b3|b4);
-
-					MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, b1|b2|b3|b4);
+					u32 b1 = ptr[0]<<24;
+					u32 b2 = ptr[1]<<16;
+					u32 b3 = ptr[2]<<8;
+					u32 b4 = ptr[3];
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, b1|b2|b3|b4);
 				} else {
-					u16 ubyte = mem[addr]<<8;
-					u16 lbyte = mem[addr+1];
-					MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG1_OFFSET, ubyte|lbyte);
+					u16 ubyte = ptr[0]<<8;
+					u16 lbyte = ptr[1];
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, ubyte|lbyte);
+				}
+			}
+			else if (zaddr>=MNT_REG_BASE) {
+				// read ARM "register"
+
+				if (zaddr==MNT_BASE_EVENT_SERIAL) {
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, (arm_app_output_event_serial<<16)|arm_app_output_event_code);
+					arm_app_output_event_ack = 1;
+				}
+				else if (zaddr==MNT_BASE_ETH_MAC_HI) {
+					uint8_t* mac = ethernet_get_mac_address_ptr();
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, mac[0]<<24|mac[1]<<16|mac[2]<<8|mac[3]);
+				}
+				else if (zaddr==MNT_BASE_ETH_MAC_LO) {
+					uint8_t* mac = ethernet_get_mac_address_ptr();
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, mac[4]<<24|mac[5]<<16);
+				}
+				else if (zaddr==MNT_BASE_ETH_TX) {
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, (ethernet_send_result&0xff)<<24|(ethernet_send_result&0xff00)<<16);
+				}
+				else {
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, 0);
 				}
 			}
 
 			// ack the read, set bit 30 in register 0
-			MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, (1<<30));
+			mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG0, (1<<30));
 			need_req_ack = 2;
 		}
 		else {
@@ -981,14 +1300,6 @@ int main()
 				hdiv = 1;
 				vdiv = 2;
 				handle_amiga_reset();
-
-				usleep(10000);
-	    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 1);
-	    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000+0x5); // OP_VSYNC
-	    		usleep(10000);
-	    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET, 0);
-	    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0xf0000000); // NOP
-	    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET, 0); // NOP
 			}
 		}
 
@@ -999,19 +1310,43 @@ int main()
         		// 2. it does that by clearing the request bit
         		// 3. we read register 3 until request bit (31:write, 30:read) goes to 0 again
         		//
-        		u32 zstate = MNTZORRO_mReadReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG3_OFFSET);
+        		u32 zstate = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG3);
                 u32 writereq   = (zstate&(1<<31));
                 u32 readreq    = (zstate&(1<<30));
                 if (need_req_ack==1 && !writereq) break;
                 if (need_req_ack==2 && !readreq) break;
                 if ((zstate&0xff) == 0) break; // reset
-                printf(".\n");
         	}
-    		MNTZORRO_mWriteReg(MNTZ_BASE_ADDR, MNTZORRO_S00_AXI_SLV_REG0_OFFSET, 0);
+    		mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG0, 0);
     		need_req_ack = 0;
         }
+
+		// check for ethernet frames
+		uint32_t frms = get_frames_received();
+		if (frms!=old_frames_received) {
+			// interrupt amiga (trigger int6/2)
+			//printf("ETHR INT6 %d (%d)\n",intrs++,frms);
+    		mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|1);
+			usleep(1);
+			mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|0);
+			old_frames_received	= frms;
+		}
     }
 
     cleanup_platform();
     return 0;
+}
+
+void arm_exception_handler(void *callback)
+{
+	printf("arm_exception_handler()!\n");
+	while (1) {
+	}
+}
+
+void arm_exception_handler_illinst(void *callback)
+{
+	printf("arm_exception_handler_illinst()!\n");
+	while (1) {
+	}
 }
