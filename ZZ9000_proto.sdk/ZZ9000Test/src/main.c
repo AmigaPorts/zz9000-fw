@@ -882,9 +882,11 @@ int main()
 
     printf("launch cpu1...\n");
 	uint32_t* core2_addr=(uint32_t*)0xFFFFFFF0;
-	uint32_t* core2_addr2=(uint32_t*)0x100; // catch
 	*core2_addr = (uint32_t)core2_loop;
-
+	uint32_t* core2_addr2=(uint32_t*)0x140; // catch 1
+	core2_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
+	core2_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
+	core2_addr2=(uint32_t*)0x100; // catch 2
 	core2_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
 	core2_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
 
@@ -1227,7 +1229,6 @@ int main()
 					// disable INT6 interrupt
 					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|0);
 
-					// FIXME driver is pummeling this address
 					ptr = (u8*)(RX_FRAME_ADDRESS+RX_FRAME_PAD+zaddr-(MNT_REG_BASE+0x2000));
 					//if (zaddr>0x2010) {
 					//	printf("ERXF read: %08lx / %08lx\n",zaddr,(u32)ptr);
