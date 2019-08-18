@@ -1,6 +1,20 @@
-#define ZZ_ENET
-
-#ifdef ZZ_ENET
+/*
+ * MNT ZZ9000 Amiga Graphics and Coprocessor Card Operating System (ZZ9000OS)
+ *
+ * Copyright (C) 2019, Lukas F. Hartmann <lukas@mntre.com>
+ *                     MNT Research GmbH, Berlin
+ *                     https://mntre.com
+ *
+ * More Info: https://mntre.com/zz9000
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * GNU General Public License v3.0 or later
+ *
+ * https://spdx.org/licenses/GPL-3.0-or-later.html
+ *
+ * Some portions (from EMACPS example code, weird custom license) Copyright (C) 2010 - 2015 Xilinx, Inc.
+ *
+*/
 
 #include <stdio.h>
 #include "platform.h"
@@ -42,7 +56,6 @@ uint8_t EmacPsMAC[6] = {0x68,0x82,0xf2,0x00,0x01,0x00};
 static volatile s32 DeviceErrors = 0;
 static volatile u32 FramesTx = 0;
 static volatile u32 FramesRx = 0;
-static u32 TxFrameLength;
 
 typedef char EthernetFrame[XEMACPS_MAX_VLAN_FRAME_SIZE_JUMBO] __attribute__ ((aligned(64)));
 
@@ -67,13 +80,7 @@ char* RxFrame = (char*)RX_FRAME_ADDRESS;		/* Receive buffer */
 static void XEmacPsSendHandler(void *Callback);
 static void XEmacPsRecvHandler(void *Callback);
 static void XEmacPsErrorHandler(void *Callback, u8 direction, u32 word);
-LONG EmacPsUtilFrameVerify(EthernetFrame * CheckFrame, EthernetFrame * ActualFrame);
-void EmacPsUtilFrameHdrFormatType(EthernetFrame * FramePtr, u16 FrameType);
-void EmacPsUtilFrameHdrFormatMAC(EthernetFrame * FramePtr, char *DestAddr);
-void EmacPsUtilFrameSetPayloadData(EthernetFrame * FramePtr, u32 PayloadSize);
-void EmacPsUtilFrameMemClear(EthernetFrame * FramePtr);
 LONG setup_phy(XEmacPs * EmacPsInstancePtr, u32 Speed);
-LONG EmacPsUtilMarvellPhyLoopback(XEmacPs * EmacPsInstancePtr, u32 Speed, u32 PhyAddr);
 static LONG EmacPsSetupIntrSystem(XScuGic *IntcInstancePtr, XEmacPs *EmacPsInstancePtr, u16 EmacPsIntrId);
 
 static u32 micrel_auto_negotiate(XEmacPs *xemacpsp, u32 phy_addr);
@@ -292,9 +299,7 @@ int init_ethernet() {
 	XEmacPs_BdClear(&BdTemplate);
 	XEmacPs_BdSetStatus(&BdTemplate, XEMACPS_TXBUF_USED_MASK);
 
-	/*
-	 * Create the TxBD ring
-	 */
+	// Create the TxBD ring
 	Status = XEmacPs_BdRingCreate(&(XEmacPs_GetTxRing
 				       (EmacPsInstancePtr)),
 				       TX_BD_LIST_START_ADDRESS,
@@ -391,7 +396,7 @@ static void XEmacPsRecvHandler(void *Callback)
 		for (int i=0; i<num_rx_bufs; i++) {
 			frame_serial++;
 
-			u32 bd_idx = XEMACPS_BD_TO_INDEX(rxring, cur_bd_ptr);
+			//u32 bd_idx = XEMACPS_BD_TO_INDEX(rxring, cur_bd_ptr);
 			int rx_bytes = XEmacPs_BdGetLength(cur_bd_ptr);
 
 			//printf("EMAC: RX: %d [%d] bd_idx: %d\n", frame_serial, rx_bytes, bd_idx);
@@ -456,7 +461,7 @@ u32 get_frames_received() {
 static int frames_dropped = 0;
 
 uint8_t* ethernet_get_mac_address_ptr() {
-	return &EmacPsMAC;
+	return (uint8_t*)&EmacPsMAC;
 }
 
 void ethernet_update_mac_address() {
@@ -529,150 +534,6 @@ static void XEmacPsErrorHandler(void *Callback, u8 Direction, u32 ErrorWord)
 	 */
 	if (GemVersion == 2) {
 		//EmacPsResetDevice(EmacPsInstancePtr);
-	}
-}
-
-LONG EmacPsUtilFrameVerify(EthernetFrame * CheckFrame, EthernetFrame * ActualFrame)
-{
-	char *CheckPtr = (char *) CheckFrame;
-	char *ActualPtr = (char *) ActualFrame;
-	u16 BytesLeft;
-	u16 Counter;
-	u32 Index;
-
-	/*
-	 * Compare the headers
-	 */
-	for (Index = 0; Index < XEMACPS_HDR_SIZE; Index++) {
-		if (CheckPtr[Index] != ActualPtr[Index]) {
-			return XST_FAILURE;
-		}
-	}
-
-	/*
-	 * Get the length of the payload
-	 */
-	BytesLeft = *(u16 *) &ActualPtr[12];
-	/*
-	 * Do endian swap from big back to little-endian.
-	 */
-	BytesLeft = Xil_EndianSwap16(BytesLeft);
-	/*
-	 * Validate the payload
-	 */
-	Counter = 0;
-	ActualPtr = &ActualPtr[14];
-
-	/*
-	 * Check 8 bit incrementing pattern
-	 */
-	while (BytesLeft && (Counter < 256)) {
-		if (*ActualPtr++ != (char) Counter++) {
-			return XST_FAILURE;
-		}
-		BytesLeft--;
-	}
-
-	/*
-	 * Check 16 bit incrementing pattern
-	 */
-	while (BytesLeft) {
-		if (*ActualPtr++ != (char) (Counter >> 8)) {	/* high */
-			return XST_FAILURE;
-		}
-
-		BytesLeft--;
-
-		if (!BytesLeft)
-			break;
-
-		if (*ActualPtr++ != (char) Counter++) {	/* low */
-			return XST_FAILURE;
-		}
-
-		BytesLeft--;
-	}
-
-	return XST_SUCCESS;
-}
-
-void EmacPsUtilFrameHdrFormatType(EthernetFrame * FramePtr, u16 FrameType)
-{
-	char *Frame = (char *) FramePtr;
-
-	/*
-	 * Increment to type field
-	 */
-	Frame = Frame + 12;
-	/*
-	 * Do endian swap from little to big-endian.
-	 */
-	FrameType = Xil_EndianSwap16(FrameType);
-	/*
-	 * Set the type
-	 */
-	*(u16 *) Frame = FrameType;
-}
-
-void EmacPsUtilFrameHdrFormatMAC(EthernetFrame * FramePtr, char *DestAddr)
-{
-	char *Frame = (char *) FramePtr;
-	char *SourceAddress = EmacPsMAC;
-	s32 Index;
-
-	/* Destination address */
-	for (Index = 0; Index < XEMACPS_MAC_ADDR_SIZE; Index++) {
-		*Frame++ = *DestAddr++;
-	}
-
-	/* Source address */
-	for (Index = 0; Index < XEMACPS_MAC_ADDR_SIZE; Index++) {
-		*Frame++ = *SourceAddress++;
-	}
-}
-
-void EmacPsUtilFrameSetPayloadData(EthernetFrame * FramePtr, u32 PayloadSize)
-{
-	u32 BytesLeft = PayloadSize;
-	u8 *Frame;
-	u16 Counter = 0;
-
-	/*
-	 * Set the frame pointer to the start of the payload area
-	 */
-	Frame = (u8 *) FramePtr + XEMACPS_HDR_SIZE;
-
-	/*
-	 * Insert 8 bit incrementing pattern
-	 */
-	while (BytesLeft && (Counter < 256)) {
-		*Frame++ = (u8) Counter++;
-		BytesLeft--;
-	}
-
-	/*
-	 * Switch to 16 bit incrementing pattern
-	 */
-	while (BytesLeft) {
-		*Frame++ = (u8) (Counter >> 8);	/* high */
-		BytesLeft--;
-
-		if (!BytesLeft)
-			break;
-
-		*Frame++ = (u8) Counter++;	/* low */
-		BytesLeft--;
-	}
-}
-
-void EmacPsUtilFrameMemClear(EthernetFrame * FramePtr)
-{
-	u32 *Data32Ptr = (u32 *) FramePtr;
-	u32 WordsLeft = sizeof(EthernetFrame) / sizeof(u32);
-
-	/* frame should be an integral number of words */
-	while (WordsLeft--) {
-		*Data32Ptr++ = 0xDEADBEEF;
 	}
 }
 
@@ -792,8 +653,6 @@ static u32 micrel_auto_negotiate(XEmacPs *xemacpsp, u32 phy_addr)
 	u16 status;
 	u16 status_speed;
 	u32 timeout_counter = 0;
-	u32 temp_speed;
-	u32 phyregtemp;
 
 	printf("PHY: Start Micrel PHY auto negotiation\n");
 
@@ -987,5 +846,3 @@ u16 ethernet_send_frame(u16 frame_size) {
 	// all good
 	return 0;
 }
-
-#endif

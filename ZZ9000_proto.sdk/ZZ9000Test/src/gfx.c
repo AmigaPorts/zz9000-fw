@@ -1,5 +1,22 @@
+/*
+ * MNT ZZ9000 Amiga Graphics and Coprocessor Card Operating System (ZZ9000OS)
+ *
+ * Copyright (C) 2019, Lukas F. Hartmann <lukas@mntre.com>
+ *                     MNT Research GmbH, Berlin
+ *                     https://mntre.com
+ *
+ * More Info: https://mntre.com/zz9000
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * GNU General Public License v3.0 or later
+ *
+ * https://spdx.org/licenses/GPL-3.0-or-later.html
+ *
+*/
+
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 #include "gfx.h"
 
@@ -20,8 +37,6 @@ void horizline(uint16_t x1, uint16_t x2, uint16_t y, uint32_t color) {
 	while (x1>x2) {
 		p[x1--]=color;
 	}
-
-	//printf("hline: %d -- %d, %d %lx\n",x1,x2,y,color);
 }
 
 void fill_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb) {
@@ -36,9 +51,10 @@ void fill_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t 
 void fill_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint8_t rect_rgb) {
 	for (uint16_t y=rect_y1; y<=rect_y2; y++) {
 		uint8_t* p=(uint8_t*)(fb+y*fb_pitch);
-		for (uint16_t x=rect_x1; x<=rect_x2; x++) {
-			p[x]=rect_rgb;
-		}
+		//for (uint16_t x=rect_x1; x<=rect_x2; x++) {
+		//	p[x]=rect_rgb;
+		//}
+		memset(p+rect_x1,rect_rgb,rect_x2-rect_x1+1);
 	}
 }
 

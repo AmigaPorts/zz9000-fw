@@ -1,3 +1,19 @@
+/*
+ * MNT ZZ9000 Amiga Graphics and Coprocessor Card Operating System (ZZ9000OS)
+ *
+ * Copyright (C) 2019, Lukas F. Hartmann <lukas@mntre.com>
+ *                     MNT Research GmbH, Berlin
+ *                     https://mntre.com
+ *
+ * More Info: https://mntre.com/zz9000
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * GNU General Public License v3.0 or later
+ *
+ * https://spdx.org/licenses/GPL-3.0-or-later.html
+ *
+*/
+
 #include <stdio.h>
 #include <string.h>
 #include <malloc.h>
@@ -20,15 +36,15 @@
 
 #include "xil_misc_psreset_api.h"
 
+typedef u8 uint8_t;
+
 #define A9_CPU_RST_CTRL		(XSLCR_BASEADDR + 0x244)
 #define A9_RST1_MASK 		0x00000002
 #define A9_CLKSTOP1_MASK	0x00000020
-//#define CPU1_CATCH			0x00000024
 
 #define XSLCR_LOCK_ADDR		(XSLCR_BASEADDR + 0x4)
 #define XSLCR_LOCK_CODE		0x0000767B
 
-typedef u8 AddressType;
 #define IIC_DEVICE_ID	XPAR_XIICPS_0_DEVICE_ID
 #define VDMA_DEVICE_ID	XPAR_AXIVDMA_0_DEVICE_ID
 #define HDMI_I2C_ADDR 	0x3b
@@ -41,9 +57,10 @@ typedef u8 AddressType;
 #define MNTVA_COLOR_1BIT     3
 #define MNTVA_COLOR_15BIT    4
 
-XIicPs Iic;
-
 #define I2C_PAUSE 10000
+
+// I2C controller instance
+XIicPs Iic;
 
 int hdmi_ctrl_write_byte(u8 addr, u8 value) {
 	u8 buffer[2];
@@ -169,12 +186,6 @@ void hdmi_ctrl_init() {
 		status = hdmi_ctrl_write_byte(sii9022_init[i], sii9022_init[i+1]);
 		usleep(2500);
 	}
-}
-
-void mandel(int k){
-	float i,j,r,x,y=-16;
-	while(puts(""),y++<15) for(x=0;x++<84;putchar(" .:-;!/>)|&IH%*#"[k&15]))for(i=k=r=0;
-	j=r*r-i*i-2+x/25,i=2*r*i+y/10,j*j+i*i<11&&k++<111;r=j);
 }
 
 XAxiVdma vdma;
@@ -318,19 +329,20 @@ void pixelclock_init(int mhz) {
 	XClk_Wiz_CfgInitialize(&clkwiz, &conf, XPAR_CLK_WIZ_0_BASEADDR);
 
 	u32 phase = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x20C);
-	//printf("phase: %lu\n", phase);
 	u32 duty = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x210);
-	//printf("duty: %lu\n", duty);
 	u32 divide = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x208);
-	//printf("divide: %lu\n", divide);
 	u32 muldiv = XClk_Wiz_ReadReg(XPAR_CLK_WIZ_0_BASEADDR, 0x200);
+
+	//printf("phase: %lu\n", phase);
+	//printf("duty: %lu\n", duty);
+	//printf("divide: %lu\n", divide);
 	//printf("muldiv: %lu\n", muldiv);
 
 	u32 mul = 11;
 	u32 div = 1;
 	u32 otherdiv = 11;
 
-	// input 100mhz
+	// Multiply/divide 100mhz fabric clock to desired pixel clock
 	if (mhz==50) {
 		mul = 15;
 		div = 1;
@@ -369,47 +381,8 @@ void pixelclock_init(int mhz) {
 		otherdiv = 10;
 	}
 
-	// 75mhz input
-	/*if (mhz==50) {
-		mul = 34;
-		div = 3;
-		otherdiv = 17;
-	} else if (mhz==40) {
-		mul = 40;
-		div = 3;
-		otherdiv = 25;
-	} else if (mhz==75) {
-		mul = 11;
-		div = 1;
-		otherdiv = 11;
-	} else if (mhz==65) {
-		mul = 13;
-		div = 1;
-		otherdiv = 15;
-	} else if (mhz==27) {
-		mul = 18;
-		div = 1;
-		otherdiv = 50;
-	} else if (mhz==150) {
-		mul = 12;
-		div = 1;
-		otherdiv = 6;
-	} else if (mhz==25) { // 25.205
-		mul = 41;
-		div = 2;
-		otherdiv = 61;
-	} else if (mhz==108) {
-		mul = 23;
-		div = 2;
-		otherdiv = 8;
-	}*/
-
 	XClk_Wiz_WriteReg(XPAR_CLK_WIZ_0_BASEADDR, 0x200, (mul<<8) | div);
 	XClk_Wiz_WriteReg(XPAR_CLK_WIZ_0_BASEADDR, 0x208, otherdiv);
-
-	/*Writing this value sets CLKOUT0_DIVIDE to 5. The VCO frequency being 1000 MHz,
-	dividing it by CLKOUT0_DIVIDE will give the 200 MHz frequency on the clkout1 in the IP.
- 	Check for the status register, if the status register value is 0x1, then go to step 3*/
 
 	// load configuration
 	XClk_Wiz_WriteReg(XPAR_CLK_WIZ_0_BASEADDR,  0x25C, 0x00000003);
@@ -526,7 +499,7 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 
 	printf("VSI: %d x %d [%d x %d] %d MHz %d Hz, hdiv: %d vdiv: %d\n",hres,vres,htotal,vtotal,mhz,vhz,hdiv,vdiv);
 
-	// apparently it is not necessary to reconfigure the SII chip,
+	// FIXME apparently it is not necessary to reconfigure the SII chip,
 	// it will auto-sense any new modes.
 	if (video_system_init_once==0) {
 		printf("hdmi_set_video_mode()...\n");
@@ -549,11 +522,6 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
     vmode_vsize = vres;
 
     //dump_vdma_status(&vdma);
-
-    /*while(1) {
-    	usleep(100000000);
-        dump_vdma_status(&vdma);
-    }*/
 }
 
 // Our address space is relative to the autoconfig base address (for example, it could be 0x600000)
@@ -596,7 +564,8 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 void handle_amiga_reset() {
     fb_fill();
 
-    framebuffer_pan_offset=0x00e00000; //+0x1c200; // FIXME select sane offset and coordinate with verilog code
+    // FIXME select sane offset and coordinate with verilog code
+    framebuffer_pan_offset=0x00e00000;
 
     printf("    _______________   ___   ___   ___  \n");
     printf("   |___  /___  / _ \\ / _ \\ / _ \\ / _ \\ \n");
@@ -629,9 +598,7 @@ void handle_amiga_reset() {
 	mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, 0); // NOP
 	usleep(1);
 
-    printf("init_ethernet()...\n");
     init_ethernet();
-    printf("... init_ethernet() done.\n");
 
 }
 
@@ -703,19 +670,12 @@ struct ZZ9K_ENV {
 void arm_exception_handler(void *callback);
 void arm_exception_handler_illinst(void *callback);
 
-
 struct ZZ9K_ENV arm_run_env;
-void (*trampoline)(struct ZZ9K_ENV* env);
+void (*core1_trampoline)(struct ZZ9K_ENV* env);
 int core2_execute = 0;
 
-uint32_t saved_sp = 0;
-
-// exexcuted on core1
-void core2_loop() {
-	//0xFFFFFFF0
-
-	//printf("[CPU1] init.\n");
-
+// core1_loop is executed on core1 (vs core0)
+void core1_loop() {
 	asm("mov	r0, r0");
 	asm("mrc	p15, 0, r1, c1, c0, 2");		/* read cp access control register (CACR) into r1 */
 	asm("orr	r1, r1, #(0xf << 20)");		/* enable full access for p10 & p11 */
@@ -743,7 +703,7 @@ void core2_loop() {
 	// stack
 	asm("mov SP, #0x06000000");
 
-	// FIXME these don't seem to do anything
+	// FIXME these don't seem to do anything useful yet
     Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_RESET, (Xil_ExceptionHandler)arm_exception_handler, NULL);
     Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_DATA_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
     Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_PREFETCH_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
@@ -754,16 +714,18 @@ void core2_loop() {
 			usleep(1);
 		}
 		core2_execute = 0;
-		printf("[CPU1] executing at %p.\n",trampoline);
+		printf("[CPU1] executing at %p.\n",core1_trampoline);
 		dmb();
 		dsb();
 		isb();
+		Xil_DCacheFlush();
+
 		asm("push {r0-r12}");
-		// save our stack pointer in 0x10000
+		// FIXME HACK save our stack pointer in 0x10000
 		asm("mov r0, #0x00010000");
 		asm("str sp, [r0]");
 
-		trampoline(&arm_run_env);
+		core1_trampoline(&arm_run_env);
 
 		asm("mov r0, #0x00010000");
 		asm("ldr sp, [r0]");
@@ -830,9 +792,7 @@ int main()
 	};
 
     init_platform();
-    Xil_DCacheDisable();
-
-    _putchar('\n');
+    Xil_DCacheDisable(); // FIXME enabling caches doesn't yet work with ETH
 
     Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_DATA_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
     Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_PREFETCH_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
@@ -840,21 +800,22 @@ int main()
 
     disable_reset_out();
 
+    // FIXME constant
     framebuffer=(u32*)0x00200000;
     int need_req_ack = 0;
 	u8* mem = (u8*)framebuffer;
 
     // blitter etc
-    uint16_t rect_x1=0;
-    uint16_t rect_x2=100;
-    uint16_t rect_x3=100;
-    uint16_t rect_y1=0;
-    uint16_t rect_y2=0;
-    uint16_t rect_y3=10;
-    uint16_t rect_pitch=640;
-    uint32_t rect_rgb=0;
-    uint32_t blitter_colormode=MNTVA_COLOR_32BIT;
-    uint16_t hdiv=1, vdiv=1;
+    uint16_t rect_x1 = 0;
+    uint16_t rect_x2 = 100;
+    uint16_t rect_x3 = 100;
+    uint16_t rect_y1 = 0;
+    uint16_t rect_y2 = 0;
+    uint16_t rect_y3 = 10;
+    uint16_t rect_pitch = 640;
+    uint32_t rect_rgb = 0;
+    uint32_t blitter_colormode = MNTVA_COLOR_32BIT;
+    uint16_t hdiv = 1, vdiv = 1;
 
     // ARM app run environment
     arm_run_env.api_version = 1;
@@ -880,20 +841,24 @@ int main()
 
     handle_amiga_reset();
 
-    printf("launch cpu1...\n");
-	uint32_t* core2_addr=(uint32_t*)0xFFFFFFF0;
-	*core2_addr = (uint32_t)core2_loop;
-	uint32_t* core2_addr2=(uint32_t*)0x140; // catch 1
-	core2_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
-	core2_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
-	core2_addr2=(uint32_t*)0x100; // catch 2
-	core2_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
-	core2_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
+    printf("launch core1...\n");
+	uint32_t* core1_addr=(uint32_t*)0xFFFFFFF0;
+	*core1_addr = (uint32_t)core1_loop;
+	// Place some machine code in strategic positions that will catch core1 if it crashes
+	uint32_t* core1_addr2=(uint32_t*)0x140; // catch 1
+	core1_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
+	core1_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
+
+	core1_addr2=(uint32_t*)0x100; // catch 2
+	core1_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
+	core1_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
 
 	asm("sev");
-	printf("cpu1 now idling.\n");
+	printf("core1 now idling.\n");
 
 	int intrs = 0;
+
+	int cache_counter = 0;
 
     while(1) {
 		u32 zstate = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG3);
@@ -932,7 +897,6 @@ int main()
 		if (writereq) {
 			u32 zaddr = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG0);
 			u32 zdata  = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG1);
-			//uint32_t count_writes = MNTZORRO_mReadReg(XPAR_MNTZORRO_0_S00_AXI_BASEADDR, MNTZORRO_S00_AXI_SLV_REG2_OFFSET);
 
 	        u32 ds3 = (zstate_raw&(1<<29));
 	        u32 ds2 = (zstate_raw&(1<<28));
@@ -956,7 +920,6 @@ int main()
 				}
 				else if (zaddr<MNT_REG_BASE+0x10000) {
 					ptr = (u8*)(TX_FRAME_ADDRESS+zaddr-(MNT_REG_BASE+0x8000));
-					//printf("ETXF write: %08lx\n",(u32)ptr);
 				}
 
 				// FIXME cache this
@@ -1035,8 +998,6 @@ int main()
 					} else if (blitter_colormode==MNTVA_COLOR_32BIT) {
 						fill_rect32(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
 					}
-
-					//Xil_DCacheFlush();
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x14) {
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
@@ -1135,21 +1096,22 @@ int main()
 					// TODO checksum?
 					arm_run_address|=zdata;
 
-					*core2_addr  = (uint32_t)core2_loop;
-					core2_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
-					core2_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
+					*core1_addr  = (uint32_t)core1_loop;
+					core1_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
+					core1_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
 					dmb();
 
 					printf("[ARM_RUN] %lx\n",arm_run_address);
 					if (arm_run_address>0) {
-						trampoline = (void (*)(struct ZZ9K_ENV*))arm_run_address;
+						core1_trampoline = (void (*)(struct ZZ9K_ENV*))arm_run_address;
 						printf("[ARM_RUN] signaling second core.\n");
 						core2_execute = 1;
 					} else {
-						trampoline = 0;
+						core1_trampoline = 0;
 						core2_execute = 0;
 					}
 
+					// FIXME move this out of here
 					// sequence to reset cpu1 taken from https://xilinx-wiki.atlassian.net/wiki/spaces/A/pages/18842504/XAPP1079+Latest+Information
 
 			    	Xil_Out32(XSLCR_UNLOCK_ADDR, XSLCR_UNLOCK_CODE);
@@ -1280,6 +1242,12 @@ int main()
 		}
 		else {
 			// there are no read/write requests, we can do other housekeeping
+
+			if (cache_counter>100000) {
+				Xil_DCacheFlush();
+				cache_counter = 0;
+			}
+			cache_counter++;
 
 			// FIXME only in vcap mode
 			if (vmode_vsize == 576) {
