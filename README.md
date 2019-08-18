@@ -26,6 +26,25 @@ The interesting bits:
 
 As Vivado projects are not suitable for version control, the Vivado project / block design is exported as a TCL script zz9000_ps.tcl. Apparently you can start vivado in TCL mode and then source this file to recreate the project incl. block design. I'm not sure yet how to automatically rebuild the SDK (Eclipse) project incl. FSBL, but all relevant sources are already in this repo.
 
+# Build Result
+
+The Eclipse-based Vivado SDK has a built-in tool (Xilinx / Generate Boot Image) to generate the boot image `BOOT.bin` from the definition file `ZZ9000_proto.sdk/ZZ9000Test/bootimage/ZZ9000OS.bif`.
+
+`BOOT.bin` contains 3 files (“partitions”):
+
+- `FSBL.elf` (first stage bootloader, written in C, Xilinx default)
+- FPGA bitfile (synthesized by Vivado from Verilog sources and Block Design)
+- `ZZ9000OS.elf` (ZZ9000OS ARM executable, written in C)
+
+# Hardware Connectivity
+
+Schematics are in the manual (PDF): https://mntre.com/media/ZZ9000_info_md/zz9000-manual.pdf
+
+- DVI (via non-HDMI compliant HDMI connector) with SiliconImage 9022 encoder
+- Gigabit Ethernet port with Micrel KSZ9031 PHY
+- MicroSD slot (for firmware loading)
+- USB 2.0 port (not yet used)
+
 # License / Copyright
 
 If not stated otherwise in specific source code files, everything here is:
