@@ -6,5 +6,21 @@ wave
 *.hdf
 ZZ9000_proto.srcs/sources_1/bd
 ZZ9000_proto.sdk/zz9000_ps_wrapper_hw_platform_0
-
+ZZ9000_proto.runs
+ZZ9000_proto.sim
+ZZ9000_proto.tmp
+ZZ9000_proto.ip_user_files
+.metadata
+.sdk
+.cproject
+.project
+.sdkproject
+.settings
+_metadata
+webtalk
+attic
+bak
+masscopy*.sh
+SDK.log.*
+ZZ9000_proto.srcs/sources_1
 
