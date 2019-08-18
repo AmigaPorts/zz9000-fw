@@ -22,6 +22,8 @@ The interesting bits:
   - `ethernet.c` low-level ethernet driver/framer
 - `ZZ9000_proto.srcs/constrs_1/new/zz9000.xdc` XDC constraints file that contains the pin/ball mappings and some timing voodoo
 
+![ZZ9000 Block Design](gfx/zz9000-bd.png?raw=true "ZZ9000 Block Design")
+
 # Set up Project
 
 As Vivado projects are not suitable for version control, the Vivado project / block design is exported as a TCL script zz9000_ps.tcl. Apparently you can start vivado in TCL mode and then source this file to recreate the project incl. block design. I'm not sure yet how to automatically rebuild the SDK (Eclipse) project incl. FSBL, but all relevant sources are already in this repo.
