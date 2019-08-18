@@ -1,25 +1,22 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 02/05/2019 07:38:44 PM
-// Design Name: 
-// Module Name: video_tester
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
+/*
+ * MNT ZZ9000 Amiga Graphics and Coprocessor Card Firmware
+ * Video Stream Formatter
+ *
+ * Copyright (C) 2019, Lukas F. Hartmann <lukas@mntre.com>
+ *                     MNT Research GmbH, Berlin
+ *                     https://mntre.com
+ *
+ * More Info: https://mntre.com/zz9000
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * GNU General Public License v3.0 or later
+ *
+ * https://spdx.org/licenses/GPL-3.0-or-later.html
+ *
+*/
 
-module video_tester(
+module video_formatter(
   input [31:0] m_axis_vid_tdata,
   input m_axis_vid_tlast,
   output m_axis_vid_tready,
@@ -112,7 +109,6 @@ always @(posedge m_axis_vid_aclk)
     
     need_line_fetch_reg  <= need_line_fetch; // sync to clock domain
     need_line_fetch_reg2 <= need_line_fetch_reg>>scale_y_effective; // line duplication
-    //need_line_fetch_reg3 <= need_line_fetch_reg2;
     
     scale_y_effective <= control_interlace ? 0 : scale_y;
     
