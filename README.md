@@ -10,9 +10,21 @@ Warning: this is still in the process of cleanup. Many hacks have been made.
 
 Currently requires Xilinx Vivado Webpack version.
 
+# Getting around the Code
+
+The interesting bits:
+
+- `mntzorro.v` is the Zorro 2/3 interface and 24-bit video capture engine, AXI4-Lite interface
+- `video_formatter.v` is the AXI video stream formatter that reinterprets and controls an incoming 32-bit word stream as 8-bit palette indexed, 16-bit 565 or 24-bit RGBX pixels and outputs a 24-bit true color parallel RGB stream with horizontal and vertical sync
+- `zz9000-fw/ZZ9000_proto.sdk/ZZ9000Test/src`
+  - `main.c` is the main entrypoint of ZZ9000OS.elf which runs on the ARM core 0 and talks to `MNTZorro` and `video_formatter` in the FPGA fabric
+  - `gfx.c` graphics acceleration routines, currently mainly rect fill and copy
+  - `ethernet.c` low-level ethernet driver/framer
+- `ZZ9000_proto.srcs/constrs_1/new/zz9000.xdc` XDC constraints file that contains the pin/ball mappings and some timing voodoo
+
 # Set up Project
 
-As Vivado projects are not suitable for version control, the Vivado project / block design is exported as a TCL script zz9000_ps.tcl. Apparently you can start vivado in TCL mode and then source this file to recreate the project incl. block design.
+As Vivado projects are not suitable for version control, the Vivado project / block design is exported as a TCL script zz9000_ps.tcl. Apparently you can start vivado in TCL mode and then source this file to recreate the project incl. block design. I'm not sure yet how to automatically rebuild the SDK (Eclipse) project incl. FSBL, but all relevant sources are already in this repo.
 
 # License / Copyright
 
