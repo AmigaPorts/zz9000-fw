@@ -12,7 +12,7 @@ Currently requires Xilinx Vivado Webpack version.
 
 # Set up Project
 
-As Vivado projects are not suitable for version control, the Vivado project / block design is exported as a TCL script zz9000-project.tcl. Apparently you can start vivado in TCL mode and then source this file to recreate the project incl. block design.
+As Vivado projects are not suitable for version control, the Vivado project / block design is exported as a TCL script zz9000_ps.tcl. Apparently you can start vivado in TCL mode and then source this file to recreate the project incl. block design.
 
 # License / Copyright
 
