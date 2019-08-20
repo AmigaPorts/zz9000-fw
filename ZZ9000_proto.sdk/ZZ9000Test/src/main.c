@@ -560,6 +560,10 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 #define MNT_BASE_RUN_ARG7   	MNT_REG_BASE+0xa4
 #define MNT_BASE_EVENT_SERIAL	MNT_REG_BASE+0xb0
 #define MNT_BASE_EVENT_CODE		MNT_REG_BASE+0xb2
+#define MNT_BASE_FW_VERSION		MNT_REG_BASE+0xc0
+
+#define REVISION_MAJOR 1
+#define REVISION_MINOR 1
 
 void handle_amiga_reset() {
     fb_fill();
@@ -1275,6 +1279,9 @@ int main()
 				}
 				else if (zaddr==MNT_BASE_ETH_TX) {
 					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, (ethernet_send_result&0xff)<<24|(ethernet_send_result&0xff00)<<16);
+				}
+				else if (zaddr==MNT_BASE_FW_VERSION) {
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, REVISION_MAJOR<<24 | REVISION_MINOR<<16);
 				}
 				else {
 					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, 0);
