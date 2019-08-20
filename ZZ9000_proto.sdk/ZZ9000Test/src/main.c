@@ -525,10 +525,12 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 }
 
 // Our address space is relative to the autoconfig base address (for example, it could be 0x600000)
-#define MNT_REG_BASE    0x000000
-#define MNT_FB_BASE     0x010000
+#define MNT_REG_BASE    			0x000000
+#define MNT_FB_BASE     			0x010000
 #define MNT_BASE_MODE   			MNT_REG_BASE+0x02
-#define MNT_BASE_SCALEMODE   		MNT_REG_BASE+0x04
+#define MNT_BASE_VDIV   			MNT_REG_BASE+0x04
+#define MNT_BASE_HSIZE 				MNT_REG_BASE+0x04
+#define MNT_BASE_VSIZE 				MNT_REG_BASE+0x06
 #define MNT_BASE_PAN_HI 			MNT_REG_BASE+0x0a
 #define MNT_BASE_PAN_LO 			MNT_REG_BASE+0x0c
 #define MNT_BASE_HDIV   			MNT_REG_BASE+0x0e
@@ -538,28 +540,26 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 #define MNT_BASE_BLIT_DST_HI 		MNT_REG_BASE+0x2c
 #define MNT_BASE_BLIT_DST_LO 		MNT_REG_BASE+0x2e
 #define MNT_BASE_BLITTER_COLORMODE 	MNT_REG_BASE+0x30
-#define MNT_BASE_VIDEOCAP_MODE 		MNT_REG_BASE+0x32
-#define MNT_BASE_HSIZE 		MNT_REG_BASE+0x34
-#define MNT_BASE_VSIZE 		MNT_REG_BASE+0x36
+#define MNT_BASE_BLIT_SRC_PITCH		MNT_REG_BASE+0x32
 
-#define MNT_BASE_ETH_TX		MNT_REG_BASE+0x80
-#define MNT_BASE_ETH_RX		MNT_REG_BASE+0x82
-#define MNT_BASE_ETH_MAC_HI  MNT_REG_BASE+0x84
-#define MNT_BASE_ETH_MAC_HI2 MNT_REG_BASE+0x86
-#define MNT_BASE_ETH_MAC_LO  MNT_REG_BASE+0x88
-#define MNT_BASE_RUN_HI		MNT_REG_BASE+0x90
-#define MNT_BASE_RUN_LO		MNT_REG_BASE+0x92
-#define MNT_BASE_RUN_ARGC   MNT_REG_BASE+0x94
-#define MNT_BASE_RUN_ARG0   MNT_REG_BASE+0x96
-#define MNT_BASE_RUN_ARG1   MNT_REG_BASE+0x98
-#define MNT_BASE_RUN_ARG2   MNT_REG_BASE+0x9a
-#define MNT_BASE_RUN_ARG3   MNT_REG_BASE+0x9c
-#define MNT_BASE_RUN_ARG4   MNT_REG_BASE+0x9e
-#define MNT_BASE_RUN_ARG5   MNT_REG_BASE+0xa0
-#define MNT_BASE_RUN_ARG6   MNT_REG_BASE+0xa2
-#define MNT_BASE_RUN_ARG7   MNT_REG_BASE+0xa4
-#define MNT_BASE_EVENT_SERIAL MNT_REG_BASE+0xb0
-#define MNT_BASE_EVENT_CODE   MNT_REG_BASE+0xb2
+#define MNT_BASE_ETH_TX			MNT_REG_BASE+0x80
+#define MNT_BASE_ETH_RX			MNT_REG_BASE+0x82
+#define MNT_BASE_ETH_MAC_HI		MNT_REG_BASE+0x84
+#define MNT_BASE_ETH_MAC_HI2	MNT_REG_BASE+0x86
+#define MNT_BASE_ETH_MAC_LO		MNT_REG_BASE+0x88
+#define MNT_BASE_RUN_HI			MNT_REG_BASE+0x90
+#define MNT_BASE_RUN_LO			MNT_REG_BASE+0x92
+#define MNT_BASE_RUN_ARGC		MNT_REG_BASE+0x94
+#define MNT_BASE_RUN_ARG0		MNT_REG_BASE+0x96
+#define MNT_BASE_RUN_ARG1		MNT_REG_BASE+0x98
+#define MNT_BASE_RUN_ARG2		MNT_REG_BASE+0x9a
+#define MNT_BASE_RUN_ARG3		MNT_REG_BASE+0x9c
+#define MNT_BASE_RUN_ARG4		MNT_REG_BASE+0x9e
+#define MNT_BASE_RUN_ARG5		MNT_REG_BASE+0xa0
+#define MNT_BASE_RUN_ARG6		MNT_REG_BASE+0xa2
+#define MNT_BASE_RUN_ARG7   	MNT_REG_BASE+0xa4
+#define MNT_BASE_EVENT_SERIAL	MNT_REG_BASE+0xb0
+#define MNT_BASE_EVENT_CODE		MNT_REG_BASE+0xb2
 
 void handle_amiga_reset() {
     fb_fill();
@@ -670,10 +670,12 @@ struct ZZ9K_ENV {
 void arm_exception_handler(void *callback);
 void arm_exception_handler_illinst(void *callback);
 
-struct ZZ9K_ENV arm_run_env;
-void (*core1_trampoline)(struct ZZ9K_ENV* env);
-int core2_execute = 0;
+volatile struct ZZ9K_ENV arm_run_env;
+volatile void (*core1_trampoline)(volatile struct ZZ9K_ENV* env);
+volatile int core2_execute = 0;
 
+#pragma GCC push_options
+#pragma GCC optimize ("O1")
 // core1_loop is executed on core1 (vs core0)
 void core1_loop() {
 	asm("mov	r0, r0");
@@ -686,10 +688,6 @@ void core1_loop() {
 	asm("orr	r1,r1, #0x40000000");		/* set VFP enable bit, leave the others in orig state */
 	asm("fmxr	FPEXC, r1");			/* write back the exception register */
 
-	uint32_t* addr = 0;
-	addr[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
-	addr[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
-
 	// enable flow prediction
 	asm("mrc	p15,0,r0,c1,c0,0");		/* flow prediction enable */
 	asm("orr	r0, r0, #(0x01 << 11)");		/* #0x8000 */
@@ -701,7 +699,11 @@ void core1_loop() {
 	asm("mcr	p15,0,r0,c1,c0,1");		/* write Auxiliary Control Register */
 
 	// stack
-	asm("mov SP, #0x06000000");
+	asm("mov sp, #0x06000000");
+
+	volatile uint32_t* addr = 0;
+	addr[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
+	addr[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
 
 	// FIXME these don't seem to do anything useful yet
     Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_RESET, (Xil_ExceptionHandler)arm_exception_handler, NULL);
@@ -715,10 +717,8 @@ void core1_loop() {
 		}
 		core2_execute = 0;
 		printf("[CPU1] executing at %p.\n",core1_trampoline);
-		dmb();
-		dsb();
-		isb();
 		Xil_DCacheFlush();
+		Xil_ICacheInvalidate();
 
 		asm("push {r0-r12}");
 		// FIXME HACK save our stack pointer in 0x10000
@@ -732,6 +732,7 @@ void core1_loop() {
 		asm("pop {r0-r12}");
 	}
 }
+#pragma GCC pop_options
 
 int main()
 {
@@ -792,7 +793,7 @@ int main()
 	};
 
     init_platform();
-    Xil_DCacheDisable(); // FIXME enabling caches doesn't yet work with ETH
+    //Xil_DCacheDisable(); // FIXME enabling caches doesn't yet work with ETH
 
     Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_DATA_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
     Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_PREFETCH_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
@@ -807,14 +808,16 @@ int main()
 
     // blitter etc
     uint16_t rect_x1 = 0;
-    uint16_t rect_x2 = 100;
-    uint16_t rect_x3 = 100;
+    uint16_t rect_x2 = 0;
+    uint16_t rect_x3 = 0;
     uint16_t rect_y1 = 0;
     uint16_t rect_y2 = 0;
-    uint16_t rect_y3 = 10;
-    uint16_t rect_pitch = 640;
+    uint16_t rect_y3 = 0;
+    uint16_t blitter_dst_pitch = 640;
     uint32_t rect_rgb = 0;
+    uint32_t rect_rgb2 = 0;
     uint32_t blitter_colormode = MNTVA_COLOR_32BIT;
+    uint16_t blitter_src_pitch = 0;
     uint16_t hdiv = 1, vdiv = 1;
 
     // ARM app run environment
@@ -842,21 +845,19 @@ int main()
     handle_amiga_reset();
 
     printf("launch core1...\n");
-	uint32_t* core1_addr=(uint32_t*)0xFFFFFFF0;
+    volatile uint32_t* core1_addr=(volatile uint32_t*)0xFFFFFFF0;
 	*core1_addr = (uint32_t)core1_loop;
 	// Place some machine code in strategic positions that will catch core1 if it crashes
-	uint32_t* core1_addr2=(uint32_t*)0x140; // catch 1
+	volatile uint32_t* core1_addr2=(volatile uint32_t*)0x140; // catch 1
 	core1_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
 	core1_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
 
-	core1_addr2=(uint32_t*)0x100; // catch 2
+	core1_addr2=(volatile uint32_t*)0x100; // catch 2
 	core1_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
 	core1_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
 
 	asm("sev");
 	printf("core1 now idling.\n");
-
-	int intrs = 0;
 
 	int cache_counter = 0;
 
@@ -968,11 +969,12 @@ int main()
 				else if (zaddr==MNT_BASE_BLIT_DST_LO) blitter_dst_offset|=zdata;
 
 				// RECTOP
+				// FIXME refactor these magic numbers / constants
 				else if (zaddr==MNT_BASE_RECTOP)   rect_x1=zdata;
 				else if (zaddr==MNT_BASE_RECTOP+2) rect_y1=zdata;
 				else if (zaddr==MNT_BASE_RECTOP+4) rect_x2=zdata;
 				else if (zaddr==MNT_BASE_RECTOP+6) rect_y2=zdata;
-				else if (zaddr==MNT_BASE_RECTOP+8) rect_pitch=zdata;
+				else if (zaddr==MNT_BASE_RECTOP+8) blitter_dst_pitch=zdata;
 
 				else if (zaddr==MNT_BASE_RECTOP+0xa) rect_x3=zdata;
 				else if (zaddr==MNT_BASE_RECTOP+0xc) rect_y3=zdata;
@@ -984,12 +986,20 @@ int main()
 					rect_rgb&=0x0000ffff;
 					rect_rgb|=(((zdata&0xff)<<8)|zdata>>8)<<16;
 				}
+				else if (zaddr==MNT_BASE_RECTOP+0x24) {
+					rect_rgb2&=0xffff0000;
+					rect_rgb2|=(((zdata&0xff)<<8)|zdata>>8);
+				}
+				else if (zaddr==MNT_BASE_RECTOP+0x26) {
+					rect_rgb2&=0x0000ffff;
+					rect_rgb2|=(((zdata&0xff)<<8)|zdata>>8)<<16;
+				}
 				else if (zaddr==MNT_BASE_RECTOP+0x12) {
 					// fill rectangle
 
 					//printf("FILL: %d %d %d %d %08lx\n",rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
 
-					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
+					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
 
 					if (blitter_colormode==MNTVA_COLOR_16BIT565) {
 						fill_rect16(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
@@ -1000,7 +1010,7 @@ int main()
 					}
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x14) {
-					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
+					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
 
 					// copy rectangle
 					if (blitter_colormode==MNTVA_COLOR_16BIT565) {
@@ -1013,15 +1023,46 @@ int main()
 						// 32 bit
 						copy_rect32(rect_x1,rect_y1,rect_x2,rect_y2,rect_x3,rect_y3);
 					}
+					Xil_DCacheFlush();
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x16) {
-					// NYI
+					// fill template
+
+					uint8_t draw_mode = blitter_colormode>>8;
+					uint8_t* tmpl_data = (uint8_t*)((u32)framebuffer+blitter_src_offset);
+					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
+
+					uint8_t bpp = 2*(blitter_colormode&0xff);
+					if (bpp==0) bpp = 1;
+					uint16_t loop_rows = 0;
+
+					if (zdata&0x8000) {
+						// pattern mode
+						// TODO yoffset
+						loop_rows = zdata&0xff;
+					}
+
+					if (loop_rows>0) {
+						/*printf("fill_template:\n====================\n");
+						printf("bpp: %d\n", bpp);
+						printf("loop_rows: %d\n", loop_rows);
+						printf("x:y1 - x:y2 %d:%d - %d:%d\n", rect_x1, rect_y1, rect_x2, rect_y2);
+						printf("draw_mode: %d\n", draw_mode);
+						printf("rect_rgb: %lx\n", rect_rgb);
+						printf("rect_rgb2: %lx\n", rect_rgb2);
+						printf("rect_x3: %d\n", rect_x3);
+						printf("rect_y3: %d\n", rect_y3);
+						printf("tmpl_data: %p\n", tmpl_data);
+						printf("blitter_src_pitch: %d\n\n", blitter_src_pitch);*/
+					}
+
+					fill_template(bpp, rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
 				}
 				else if (zaddr==MNT_BASE_BLITTER_COLORMODE) {
 					//set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
 					blitter_colormode = zdata;
 				}
-				else if (zaddr==MNT_BASE_SCALEMODE) {
+				else if (zaddr==MNT_BASE_VDIV) {
 					printf("VDIV change: %d -> %ld\n",vdiv,zdata);
 					vdiv=zdata;
 				}
@@ -1062,10 +1103,11 @@ int main()
 					printf("hdiv change: %d -> %ld\n",hdiv,zdata);
 					hdiv=zdata;
 				}
-				else if (zaddr==MNT_BASE_VIDEOCAP_MODE) {
-					// unused
+				else if (zaddr==MNT_BASE_BLIT_SRC_PITCH) {
+					blitter_src_pitch = zdata;
 				}
 				else if (zaddr==MNT_BASE_ETH_TX) {
+					Xil_DCacheFlush();
 					ethernet_send_result = ethernet_send_frame(zdata);
 					//printf("SEND frame sz: %ld res: %d\n",zdata,ethernet_send_result);
 				}
@@ -1099,13 +1141,16 @@ int main()
 					*core1_addr  = (uint32_t)core1_loop;
 					core1_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
 					core1_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
-					dmb();
 
 					printf("[ARM_RUN] %lx\n",arm_run_address);
 					if (arm_run_address>0) {
-						core1_trampoline = (void (*)(struct ZZ9K_ENV*))arm_run_address;
+						core1_trampoline = (volatile void (*)(volatile struct ZZ9K_ENV*))arm_run_address;
 						printf("[ARM_RUN] signaling second core.\n");
+						Xil_DCacheFlush();
+						Xil_ICacheInvalidate();
 						core2_execute = 1;
+						Xil_DCacheFlush();
+						Xil_ICacheInvalidate();
 					} else {
 						core1_trampoline = 0;
 						core2_execute = 0;
@@ -1243,7 +1288,14 @@ int main()
 		else {
 			// there are no read/write requests, we can do other housekeeping
 
-			if (cache_counter>100000) {
+			// 640x480x8
+			// 10000: 5688 op/s
+			// 25000: 5700-5900 op/s
+			// 50000: 5782op/s
+
+			// we flush the cache at regular intervals to avoid too much visible cache activity on the screen
+			// FIXME make this adjustable for user
+			if (cache_counter>25000) {
 				Xil_DCacheFlush();
 				cache_counter = 0;
 			}
@@ -1295,9 +1347,9 @@ int main()
 		if (frms!=old_frames_received) {
 			// interrupt amiga (trigger int6/2)
 			//printf("ETHR INT6 %d (%d)\n",intrs++,frms);
-    		mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|1);
-			usleep(1);
-			mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|0);
+			mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|1);
+    		usleep(1);
+    		mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|0);
 			old_frames_received	= frms;
 		}
     }

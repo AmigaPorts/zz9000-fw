@@ -144,3 +144,136 @@ void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t r
 		}
 	}
 }
+
+// see http://amigadev.elowar.com/read/ADCD_2.1/Libraries_Manual_guide/node0351.html
+#define JAM1	    0	      /* jam 1 color into raster */
+#define JAM2	    1	      /* jam 2 colors into raster */
+#define COMPLEMENT  2	      /* XOR bits into raster */
+#define INVERSVID   4	      /* inverse video for drawing modes */
+
+// inspired by UAE code. needs cleanup / optimization
+
+void fill_template(uint32_t bpp, uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2,
+		uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color, uint16_t x_offset, uint16_t y_offset, uint8_t* tmpl_data, uint16_t tmpl_pitch, uint16_t loop_rows)
+{
+	uint8_t inversion = 0;
+	uint16_t rows;
+	int bitoffset;
+	uint8_t* dp=(uint8_t*)(fb);
+	uint8_t* tmpl_base;
+
+	uint16_t width = rect_x2-rect_x1+1;
+
+	if (draw_mode & INVERSVID) inversion = 1;
+	draw_mode &= 0x03;
+
+	bitoffset = x_offset % 8;
+	tmpl_base = tmpl_data + x_offset / 8;
+
+	// starting position in destination
+	dp += rect_y1*fb_pitch + rect_x1*bpp;
+
+	// number of 8-bit blocks of source
+	uint16_t loop_x = x_offset;
+	uint16_t loop_y = y_offset;
+
+	for (rows = rect_y1; rows <= rect_y2; rows++, dp += fb_pitch, tmpl_base += tmpl_pitch) {
+		unsigned long cols;
+		uint8_t* dp2 = dp;
+		uint8_t* tmpl_mem;
+		unsigned int data;
+
+		tmpl_mem = tmpl_base;
+		data = *tmpl_mem;
+
+		for (cols = 0; cols < width; cols += 8, dp2 += bpp*8) {
+			unsigned int byte;
+			long bits;
+			long max = width - cols;
+
+			if (max > 8) max = 8;
+
+			// loop through 16-bit horizontal pattern
+			if (loop_rows>0) {
+				tmpl_mem = tmpl_data+(loop_y%loop_rows)*2;
+				byte = tmpl_mem[loop_x%2];
+				loop_x++;
+			} else {
+				data <<= 8;
+				data |= *++tmpl_mem;
+				byte = data >> (8 - bitoffset);
+			}
+
+			switch (draw_mode)
+			{
+				case JAM1:
+				{
+					for (bits = 0; bits < max; bits++) {
+						int bit_set = (byte & 0x80);
+						byte <<= 1;
+						if (inversion) bit_set = !bit_set;
+
+						if (bit_set) {
+
+							if (bpp == 1) {
+								dp2[bits] = fg_color>>24;
+							} else if (bpp == 2) {
+								((uint16_t*)dp2)[bits] = fg_color;
+							} else if (bpp == 4) {
+								((uint32_t*)dp2)[bits] = fg_color;
+							}
+
+							// TODO mask
+							//dp2[bits] = (fg_color & mask) | (dp2[bits] & ~mask);
+						}
+					}
+					break;
+				}
+				case JAM2:
+				{
+					for (bits = 0; bits < max; bits++) {
+						char bit_set = (byte & 0x80);
+						byte <<= 1;
+						if (inversion) bit_set = !bit_set;
+
+						uint32_t color = bit_set ? fg_color : bg_color;
+						//if (bit_set) printf("#");
+						//else printf(".");
+
+						if (bpp == 1) {
+							dp2[bits] = color>>24;
+						} else if (bpp == 2) {
+							((uint16_t*)dp2)[bits] = color;
+						} else if (bpp == 4) {
+							((uint32_t*)dp2)[bits] = color;
+						}
+
+						// NYI
+						//	dp2[bits] = (color & mask) | (dp2[bits] & ~mask);
+					}
+					break;
+				}
+				case COMPLEMENT:
+				{
+					for (bits = 0; bits < max; bits++) {
+						int bit_set = (byte & 0x80);
+						byte <<= 1;
+						if (bit_set) {
+							if (bpp == 1) {
+								dp2[bits] ^= 0xff;
+							} else if (bpp == 2) {
+								((uint16_t*)dp2)[bits] ^= 0xffff;
+							} else if (bpp == 4) {
+								((uint32_t*)dp2)[bits] ^= 0xffffffff;
+							}
+						}
+						// TODO mask
+					}
+					break;
+				}
+			}
+		}
+		loop_y++;
+	}
+}
+
