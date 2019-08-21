@@ -606,8 +606,8 @@ module MNTZorro_v0_1_S00_AXI
   reg zorro_read = 0;
   reg zorro_write = 0;
   
-  assign ZORRO_INT6 = zorro_interrupt;
   reg zorro_interrupt = 0;
+  assign ZORRO_INT6 = zorro_interrupt;
   
   reg [15:0] data_in;
   reg [31:0] rr_data;
@@ -906,7 +906,6 @@ module MNTZorro_v0_1_S00_AXI
   reg [9:0] videocap_prex_in = 'h33; //'h42;
   reg [9:0] videocap_prex = 'h33; //'h42;
   reg [9:0] videocap_height = 'h200; //'h117; // 'h127;
-  reg [8:0] videocap_width = 360; // 320
   
   parameter VCAPW = 399;
   reg [31:0] videocap_buf [0:VCAPW];
@@ -1134,7 +1133,7 @@ module MNTZorro_v0_1_S00_AXI
           m00_axi_awvalid_out <= 0;
           m00_axi_wvalid_out  <= 0;
           videocap_save_x <= videocap_save_x + 1'b1;
-          if (videocap_save_x > 722) begin // FIXME was 720
+          if (videocap_save_x > videocap_pitch + 1'b1) begin // FIXME was 722
             videocap_save_line_done <= videocap_y2;
             videocap_save_x <= 0;
           end
@@ -1857,10 +1856,17 @@ module MNTZorro_v0_1_S00_AXI
       video_control_op   <= video_control_op_zorro;
     end
     
+    // snoop the screen width for correct capture pitch
+    if (video_control_op_axi == 2) begin
+      // OP_DIMENSIONS = 2
+      videocap_pitch <= video_control_data_axi[11:0];
+    end
+    
     out_reg0 <= ZORRO3 ? last_z3addr : last_addr;
     out_reg1 <= zorro_ram_write_data;
     out_reg2 <= last_z3addr;
-    out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_ram_write_bytes, ZORRO3, video_control_interlace, 16'b0, zorro_state};
+    out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_ram_write_bytes, ZORRO3, 
+                video_control_interlace, videocap_mode, 15'b0, zorro_state};
   end
 
   assign slv_reg_rden = axi_arready & S_AXI_ARVALID & ~axi_rvalid;
