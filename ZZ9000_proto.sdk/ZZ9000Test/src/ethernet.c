@@ -186,7 +186,7 @@ int init_ethernet_buffers() {
 	return XST_SUCCESS;
 }
 
-int init_ethernet() {
+int ethernet_init() {
 	XEmacPs_Config *Config;
 	long Status;
 	XEmacPs* EmacPsInstancePtr = &EmacPsInstance;

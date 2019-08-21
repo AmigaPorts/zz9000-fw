@@ -17,7 +17,7 @@
 #ifndef ETHERNET_H_
 #define ETHERNET_H_
 
-int init_ethernet();
+int ethernet_init();
 u16 ethernet_send_frame(u16 frame_size);
 void ethernet_receive_frame();
 u32 get_frames_received();
