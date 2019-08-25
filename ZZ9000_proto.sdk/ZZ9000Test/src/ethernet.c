@@ -583,11 +583,11 @@ static u32 micrel_auto_negotiate(XEmacPs *xemacpsp, u32 phy_addr)
 	if (auto_negotiate) {
 		printf("PHY: Start Micrel PHY auto negotiation\n");
 
-    XEmacPs_PhyWrite(xemacpsp,phy_addr, IEEE_PAGE_ADDRESS_REGISTER, 2);
-    XEmacPs_PhyRead(xemacpsp, phy_addr, IEEE_CONTROL_REG_MAC, &control);
-    control |= IEEE_RGMII_TXRX_CLOCK_DELAYED_MASK;
-    XEmacPs_PhyWrite(xemacpsp, phy_addr, IEEE_CONTROL_REG_MAC, control);
-    XEmacPs_PhyWrite(xemacpsp, phy_addr, IEEE_PAGE_ADDRESS_REGISTER, 0);
+		XEmacPs_PhyWrite(xemacpsp,phy_addr, IEEE_PAGE_ADDRESS_REGISTER, 2);
+		XEmacPs_PhyRead(xemacpsp, phy_addr, IEEE_CONTROL_REG_MAC, &control);
+		control |= IEEE_RGMII_TXRX_CLOCK_DELAYED_MASK;
+		XEmacPs_PhyWrite(xemacpsp, phy_addr, IEEE_CONTROL_REG_MAC, control);
+		XEmacPs_PhyWrite(xemacpsp, phy_addr, IEEE_PAGE_ADDRESS_REGISTER, 0);
 
 		XEmacPs_PhyRead(xemacpsp, phy_addr, IEEE_AUTONEGO_ADVERTISE_REG, &control);  //reg 0x04
 		control |= IEEE_ASYMMETRIC_PAUSE_MASK;   //0x0800
@@ -656,9 +656,9 @@ static u32 micrel_auto_negotiate(XEmacPs *xemacpsp, u32 phy_addr)
 			XEmacPs_PhyRead(xemacpsp, phy_addr, IEEE_COPPER_SPECIFIC_STATUS_REG_2,  &temp);
 			timeout_counter++;
 
-			if (timeout_counter > 30) {
+			if (timeout_counter > 4) {
 				printf("PHY: Auto negotiation timeout\n");
-				return 0;
+				break;
 			}
 			XEmacPs_PhyRead(xemacpsp, phy_addr, IEEE_STATUS_REG_OFFSET, &status);
 		}
