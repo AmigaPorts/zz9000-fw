@@ -448,6 +448,7 @@ void video_formatter_write(uint32_t data, uint16_t op) {
 void video_formatter_init(int scalemode, int colormode, int width, int height, int htotal, int vtotal, int hss, int hse, int vss, int vse, int polarity) {
 	video_formatter_write((vtotal<<16)|htotal, MNTVF_OP_MAX);
 	video_formatter_write((height<<16)|width, MNTVF_OP_DIMENSIONS);
+	video_formatter_write((hss<<16)|hse, MNTVF_OP_HS);
 	video_formatter_write((vss<<16)|vse, MNTVF_OP_VS);
 	video_formatter_write(polarity, MNTVF_OP_POLARITY);
 	video_formatter_write(scalemode, MNTVF_OP_SCALE);
