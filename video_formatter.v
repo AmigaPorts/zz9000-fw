@@ -100,8 +100,6 @@ reg scale_y_effective;
 reg need_frame_sync; // vga domain
 reg need_frame_sync_reg; // fetch domain
 
-reg vga_vsync_request;
-
 always @(posedge m_axis_vid_aclk)
   begin
     if (~aresetn) begin
@@ -282,14 +280,13 @@ always @(posedge dvi_clk) begin
   vga_v_rez <= screen_height;
   vga_h_max <= screen_h_max;
   vga_v_max <= screen_v_max;
-  vga_h_sync_start <= screen_h_sync_start + 4;
-  vga_h_sync_end <= screen_h_sync_end + 4;
+  vga_h_sync_start <= screen_h_sync_start; //  + 4
+  vga_h_sync_end <= screen_h_sync_end; //  + 4
   vga_v_sync_start <= screen_v_sync_start;
   vga_v_sync_end <= screen_v_sync_end;
   vga_scale_x <= scale_x;
   vga_colormode <= colormode;
   vga_sync_polarity <= sync_polarity;
-  vga_vsync_request <= vsync_request;
   
   // FIXME there is some non-determinism in the relationship
   // between this process and the fetching process
@@ -357,9 +354,9 @@ always @(posedge dvi_clk) begin
   if (vga_colormode==CMODE_16BIT)
     // 16 bit 5r6g5b
     pixout32_dly <= {8'b0,blue16,green16,red16};
-  else if (vga_colormode==CMODE_15BIT)
-    // 15 bit 5r5g5b for shapeshifter
-    pixout32_dly <= {8'b0,blue15,green15,red15};
+  //else if (vga_colormode==CMODE_15BIT)
+  //  // 15 bit 5r5g5b for shapeshifter
+  //  pixout32_dly <= {8'b0,blue15,green15,red15};
   else
     pixout32_dly <= pixout32;
   pixout32_dly2 <= pixout32_dly;
@@ -369,15 +366,15 @@ always @(posedge dvi_clk) begin
   case (vga_colormode)
     CMODE_8BIT:  pixout <= palout;
     CMODE_16BIT: pixout <= pixout32_dly;
-    CMODE_15BIT: pixout <= pixout32_dly;
+    //CMODE_15BIT: pixout <= pixout32_dly;
     CMODE_32BIT: pixout <= pixout32_dly2;
   endcase
   
   dvi_rgb <= pixout;
     
-  if (counter_x >= vga_h_max) begin
+  if (counter_x > vga_h_max) begin
     counter_x <= 0;
-    if (counter_y >= vga_v_max) begin
+    if (counter_y > vga_v_max) begin
       counter_y <= 0;
     end else begin
       counter_y <= counter_y + 1'b1;
@@ -399,12 +396,12 @@ always @(posedge dvi_clk) begin
   else
     need_frame_sync <= 0;
   
-  if (counter_x>=vga_h_sync_start && counter_x<=vga_h_sync_end)
+  if (counter_x>=vga_h_sync_start && counter_x<vga_h_sync_end)
     dvi_hsync <= 1^vga_sync_polarity;
   else
     dvi_hsync <= 0^vga_sync_polarity;
     
-  if (counter_y>=vga_v_sync_start && counter_y<=vga_v_sync_end)
+  if (counter_y>=vga_v_sync_start && counter_y<vga_v_sync_end)
     dvi_vsync <= 1^vga_sync_polarity;
   else
     dvi_vsync <= 0^vga_sync_polarity;
