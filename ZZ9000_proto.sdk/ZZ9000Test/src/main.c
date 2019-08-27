@@ -57,7 +57,7 @@ typedef u8 uint8_t;
 #define MNTVA_COLOR_1BIT     3
 #define MNTVA_COLOR_15BIT    4
 
-#define I2C_PAUSE 10000
+#define I2C_PAUSE 10
 
 // I2C controller instance
 XIicPs Iic;
@@ -131,7 +131,7 @@ static u8 sii9022_init[] = {
 	0x06, 0xEE,	// Total Lines - LSB
 	0x07, 0x02,	// Total Lines - MSB
 	0x08, 0x70, // pixel repeat rate?
-	0x1a, 0x01, // DVI
+	0x1a, 0x00, // CTRL_DATA - bit 1 causes 2 purple extra columns on DVI monitors (probably HDMI mode)
 };
 
 void disable_reset_out() {
@@ -155,15 +155,15 @@ void hdmi_ctrl_init() {
 	XIicPs_Config *config;
 	config = XIicPs_LookupConfig(IIC_DEVICE_ID);
 	status = XIicPs_CfgInitialize(&Iic, config, config->BaseAddress);
-	printf("XIicPs_CfgInitialize: %d\n", status);
+	//printf("XIicPs_CfgInitialize: %d\n", status);
 	usleep(10000);
-	printf("XIicPs is ready: %lx\n", Iic.IsReady);
+	//printf("XIicPs is ready: %lx\n", Iic.IsReady);
 
 	status = XIicPs_SelfTest(&Iic);
-	printf("XIicPs_SelfTest: %x\n", status);
+	//printf("XIicPs_SelfTest: %x\n", status);
 
 	status = XIicPs_SetSClk(&Iic, IIC_SCLK_RATE);
-	printf("XIicPs_SetSClk: %x\n", status);
+	//printf("XIicPs_SetSClk: %x\n", status);
 
 	usleep(2500);
 
@@ -174,17 +174,17 @@ void hdmi_ctrl_init() {
 	status = hdmi_ctrl_read_byte(0x1b,buffer);
 	printf("[%d] TPI device id: 0x%x\n",status,buffer[1]);
 	status = hdmi_ctrl_read_byte(0x1c,buffer);
-	printf("[%d] TPI revision 1: 0x%x\n",status,buffer[1]);
-	status = hdmi_ctrl_read_byte(0x1d,buffer);
-	printf("[%d] TPI revision 2: 0x%x\n",status,buffer[1]);
-	status = hdmi_ctrl_read_byte(0x30,buffer);
-	printf("[%d] HDCP revision: 0x%x\n",status,buffer[1]);
-	status = hdmi_ctrl_read_byte(0x3d,buffer);
+	//printf("[%d] TPI revision 1: 0x%x\n",status,buffer[1]);
+	//status = hdmi_ctrl_read_byte(0x1d,buffer);
+	//printf("[%d] TPI revision 2: 0x%x\n",status,buffer[1]);
+	//status = hdmi_ctrl_read_byte(0x30,buffer);
+	//printf("[%d] HDCP revision: 0x%x\n",status,buffer[1]);
+	//status = hdmi_ctrl_read_byte(0x3d,buffer);
 	printf("[%d] hotplug: 0x%x\n",status,buffer[1]);
 
 	for (int i=0; i<sizeof(sii9022_init); i+=2) {
 		status = hdmi_ctrl_write_byte(sii9022_init[i], sii9022_init[i+1]);
-		usleep(2500);
+		usleep(1);
 	}
 }
 
@@ -193,7 +193,7 @@ static u32* framebuffer=0;
 static u32  framebuffer_pan_offset=0;
 static u32  blitter_dst_offset=0;
 static u32  blitter_src_offset=0;
-static u32  vmode_hsize=640, vmode_vsize=480;
+static u32  vmode_hsize=800, vmode_vsize=600, vmode_hdiv=1, vmode_vdiv=2;
 
 // 32bit: hdiv=1, 16bit: hdiv=2, 8bit: hdiv=4, ...
 int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
@@ -257,7 +257,7 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 	return XST_SUCCESS;
 }
 
-void hdmi_set_video_mode(u16 htotal, u16 vtotal, u32 pixelclock_hz, u16 vhz)
+void hdmi_set_video_mode(u16 htotal, u16 vtotal, u32 pixelclock_hz, u16 vhz, u8 hdmi)
 {
 	/*
 	 * SII9022 registers
@@ -271,8 +271,10 @@ void hdmi_set_video_mode(u16 htotal, u16 vtotal, u32 pixelclock_hz, u16 vhz)
 		0x06, 0xEE,	// Total Lines - LSB
 		0x07, 0x02,	// Total Lines - MSB
 		0x08, 0x70, // pixel repeat rate?
-		0x1a, 0x01, // DVI
+		0x1a, 0x00, // 0: DVI, 1: HDMI
 	*/
+
+	// see also https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/bridge/sii902x.c#L358
 
 	u8* sii_mode=sii9022_init+12;
 
@@ -284,6 +286,7 @@ void hdmi_set_video_mode(u16 htotal, u16 vtotal, u32 pixelclock_hz, u16 vhz)
 	sii_mode[2*5+1] = htotal>>8;
 	sii_mode[2*6+1] = vtotal;
 	sii_mode[2*7+1] = vtotal>>8;
+	sii_mode[2*9+1] = hdmi;
 }
 
 u32 dump_vdma_status(XAxiVdma *InstancePtr)
@@ -420,115 +423,56 @@ void video_formatter_valign() {
 	usleep(1);
 }
 
-void video_formatter_init(uint32_t base_addr, int scalemode, int colormode, int width, int height, int htotal, int vtotal, int hss, int hse, int vss, int vse, int polarity) {
-	mntzorro_write(base_addr, MNTZORRO_REG3, scalemode);
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000004); // OP_SCALE
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
-	usleep(1);
+#define VF_DLY ;
+#define MNTVF_OP_MAX 6
+#define MNTVF_OP_HS 7
+#define MNTVF_OP_VS 8
+#define MNTVF_OP_POLARITY 10
+#define MNTVF_OP_SCALE 4
+#define MNTVF_OP_DIMENSIONS 2
+#define MNTVF_OP_COLORMODE 1
 
-	mntzorro_write(base_addr, MNTZORRO_REG3, (height<<16)|width);
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000002); // OP_DIMENSIONS (height | width)
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
-	usleep(1);
+void video_formatter_write(uint32_t data, uint16_t op) {
+	mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG3, data);
+	VF_DLY;
+	mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, 0x80000000|op); // OP_MAX (vmax | hmax)
+	VF_DLY;
+	mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, 0x80000000); // NOP
+	VF_DLY;
+	mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, 0); // clear
+	VF_DLY;
+	mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG3, 0); // clear
+	VF_DLY;
+}
 
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG3, colormode);
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000001); // OP_COLORMODE
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
-	usleep(1);
-
-	mntzorro_write(base_addr, MNTZORRO_REG3, (vtotal<<16)|htotal);
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000006); // OP_MAX (vmax | hmax)
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
-	usleep(1);
-
-	mntzorro_write(base_addr, MNTZORRO_REG3, (hss<<16)|hse);
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000007); // OP_HS (hsync_start | hsync_end)
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
-	usleep(1);
-
-	mntzorro_write(base_addr, MNTZORRO_REG3, (vss<<16)|vse);
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000008); // OP_VS (vsync_start | vsync_end)
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
-	usleep(1);
-
-	mntzorro_write(base_addr, MNTZORRO_REG3, polarity);
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x8000000a); // OP_POLARITY
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0x80000000); // NOP
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG2, 0); // clear
-	usleep(1);
-	mntzorro_write(base_addr, MNTZORRO_REG3, 0); // clear
-	usleep(1);
+void video_formatter_init(int scalemode, int colormode, int width, int height, int htotal, int vtotal, int hss, int hse, int vss, int vse, int polarity) {
+	video_formatter_write((vtotal<<16)|htotal, MNTVF_OP_MAX);
+	video_formatter_write((height<<16)|width, MNTVF_OP_DIMENSIONS);
+	video_formatter_write((vss<<16)|vse, MNTVF_OP_VS);
+	video_formatter_write(polarity, MNTVF_OP_POLARITY);
+	video_formatter_write(scalemode, MNTVF_OP_SCALE);
+	video_formatter_write(colormode, MNTVF_OP_COLORMODE);
 
 	video_formatter_valign();
 }
 
-static int video_system_init_once = 0;
-
-void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int vhz, int hdiv, int vdiv) {
+void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int vhz, int hdiv, int vdiv, int hdmi) {
 
 	printf("VSI: %d x %d [%d x %d] %d MHz %d Hz, hdiv: %d vdiv: %d\n",hres,vres,htotal,vtotal,mhz,vhz,hdiv,vdiv);
-
-	// FIXME apparently it is not necessary to reconfigure the SII chip,
-	// it will auto-sense any new modes.
-	if (video_system_init_once==0) {
-		printf("hdmi_set_video_mode()...\n");
-		hdmi_set_video_mode(htotal, vtotal, mhz, vhz);
-
-		printf("hdmi_ctrl_init()...\n");
-		hdmi_ctrl_init();
-		video_system_init_once = 1;
-	}
 
 	printf("pixelclock_init()...\n");
 	pixelclock_init(mhz);
 	printf("...done.\n");
 
+	printf("hdmi_set_video_mode()...\n");
+	hdmi_set_video_mode(hres, vres, mhz, vhz, hdmi);
+
+	printf("hdmi_ctrl_init()...\n");
+	hdmi_ctrl_init();
+
 	printf("init_vdma()...\n");
 	init_vdma(hres, vres, hdiv, vdiv);
 	printf("...done.\n");
-
-    vmode_hsize = hres;
-    vmode_vsize = vres;
 
     //dump_vdma_status(&vdma);
 }
@@ -572,18 +516,27 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 #define MNT_BASE_FW_VERSION		MNT_REG_BASE+0xc0
 
 #define REVISION_MAJOR 1
-#define REVISION_MINOR 2
+#define REVISION_MINOR 3
 
-#define ZZVMODE_1280x720	0
-#define ZZVMODE_800x600		1
-#define ZZVMODE_640x480		2
-#define ZZVMODE_1024x768	3
-#define ZZVMODE_1280x1024	4
-#define ZZVMODE_1920x1080	5 // 50hz
-#define ZZVMODE_720x576		6 // 50hz
+#define ZZVMODE_1280x720		0
+#define ZZVMODE_800x600			1
+#define ZZVMODE_640x480			2
+#define ZZVMODE_1024x768		3
+#define ZZVMODE_1280x1024		4
+#define ZZVMODE_1920x1080_60 	5
+#define ZZVMODE_720x576			6 // 50hz
+#define ZZVMODE_1920x1080_50	7 // 50hz
 
-void video_mode_init(int mode, int scalemode, int colormode, int hdiv, int vdiv) {
-	int hres, vres, hmax, vmax, hstart, hend, vstart, vend, polarity, mhz, vhz;
+void video_mode_init(int mode, int scalemode, int colormode) {
+	int hres, vres, hmax, vmax, hstart, hend, vstart, vend, polarity, mhz, vhz, hdmi;
+
+	int hdiv = 1, vdiv = 1;
+
+	if (scalemode&1) hdiv = 2;
+	if (scalemode&2) vdiv = 2;
+
+	if (colormode==0) hdiv*=4;
+	if (colormode==1) hdiv*=2;
 
 	switch (mode) {
 	case ZZVMODE_1280x720:
@@ -598,6 +551,7 @@ void video_mode_init(int mode, int scalemode, int colormode, int hdiv, int vdiv)
 		polarity = 0;
 		mhz = 75;
 		vhz = 60;
+		hdmi = 0;
 		break;
 	case ZZVMODE_800x600:
 		hres = 800;
@@ -611,6 +565,7 @@ void video_mode_init(int mode, int scalemode, int colormode, int hdiv, int vdiv)
 		polarity = 0;
 		mhz = 40;
 		vhz = 60;
+		hdmi = 0;
 		break;
 	case ZZVMODE_640x480:
 		hres = 640;
@@ -624,6 +579,7 @@ void video_mode_init(int mode, int scalemode, int colormode, int hdiv, int vdiv)
 		polarity = 0;
 		mhz = 25;
 		vhz = 60;
+		hdmi = 0;
 		break;
 	case ZZVMODE_1024x768:
 		hres = 1024;
@@ -637,6 +593,7 @@ void video_mode_init(int mode, int scalemode, int colormode, int hdiv, int vdiv)
 		polarity = 0;
 		mhz = 65;
 		vhz = 60;
+		hdmi = 0;
 		break;
 	case ZZVMODE_1280x1024:
 		hres = 1280;
@@ -650,8 +607,9 @@ void video_mode_init(int mode, int scalemode, int colormode, int hdiv, int vdiv)
 		polarity = 0;
 		mhz = 108;
 		vhz = 60;
+		hdmi = 0;
 		break;
-	case ZZVMODE_1920x1080:
+	case ZZVMODE_1920x1080_50:
 		hres = 1920;
 		vres = 1080;
 		hstart = 2448;
@@ -663,6 +621,21 @@ void video_mode_init(int mode, int scalemode, int colormode, int hdiv, int vdiv)
 		polarity = 0;
 		mhz = 150;
 		vhz = 50;
+		hdmi = 0;
+		break;
+	case ZZVMODE_1920x1080_60:
+		hres = 1920;
+		vres = 1080;
+		hstart = 2008;
+		hend = 2052;
+		hmax = 2200;
+		vstart = 1084;
+		vend = 1089;
+		vmax = 1125;
+		polarity = 0;
+		mhz = 150;
+		vhz = 50;
+		hdmi = 0;
 		break;
 	case ZZVMODE_720x576:
 		hres = 720;
@@ -676,26 +649,37 @@ void video_mode_init(int mode, int scalemode, int colormode, int hdiv, int vdiv)
 		polarity = 1;
 		mhz = 27;
 		vhz = 50;
+		hdmi = 0;
 		break;
 	default:
 		printf("Error: unknown mode\n");
 		return;
 	}
 
-	video_formatter_init(MNTZ_BASE_ADDR, scalemode, colormode,
+	video_system_init(hres, vres, hmax, vmax, mhz, vhz, hdiv, vdiv, hdmi);
+
+	video_formatter_init(scalemode, colormode,
 			hres, vres, hmax, vmax, hstart, hend, vstart, vend, polarity);
 
-	video_system_init(hres, vres, hmax, vmax, mhz, vhz, hdiv, vdiv);
+    vmode_hsize = hres;
+    vmode_vsize = vres;
+	vmode_vdiv = vdiv;
+	vmode_hdiv = hdiv;
 }
 
 // this mode can be changed by amiga software to select a different resolution / framerate for
 // native video capture
-static int videocap_video_mode = ZZVMODE_720x576;
-static int video_mode = ZZVMODE_720x576;
+//static int videocap_video_mode = ZZVMODE_720x576;
+//static int video_mode = ZZVMODE_720x576|2<<12|MNTVA_COLOR_32BIT<<8;
+//static int default_pan_offset = 0x00e00000;
+
+// default to more compatible, 60hz mode
+static int videocap_video_mode = ZZVMODE_800x600;
+static int video_mode = ZZVMODE_800x600|2<<12|MNTVA_COLOR_32BIT<<8;
+static int default_pan_offset = 0x00e00bd0;
 
 void handle_amiga_reset() {
-    // FIXME select sane offset and coordinate with verilog code
-    framebuffer_pan_offset=0x00e00000;
+    framebuffer_pan_offset = default_pan_offset;
     fb_fill(framebuffer_pan_offset/4);
 
     printf("    _______________   ___   ___   ___  \n");
@@ -707,8 +691,9 @@ void handle_amiga_reset() {
 
 	usleep(10000);
 
-	video_mode_init(videocap_video_mode, 2, 2, 1, 2);
-	video_mode = videocap_video_mode;
+	// scalemode 2 (vertical doubling)
+	video_mode_init(videocap_video_mode, 2, MNTVA_COLOR_32BIT);
+	video_mode = videocap_video_mode|2<<12|MNTVA_COLOR_32BIT<<8;
 
     ethernet_init();
 }
@@ -929,7 +914,6 @@ int main()
     uint32_t rect_rgb2 = 0;
     uint32_t blitter_colormode = MNTVA_COLOR_32BIT;
     uint16_t blitter_src_pitch = 0;
-    uint16_t hdiv = 1, vdiv = 1;
 
     // ARM app run environment
     arm_run_env.api_version = 1;
@@ -959,6 +943,7 @@ int main()
     volatile uint32_t* core1_addr=(volatile uint32_t*)0xFFFFFFF0;
 	*core1_addr = (uint32_t)core1_loop;
 	// Place some machine code in strategic positions that will catch core1 if it crashes
+	// FIXME: clean this up and turn into a debug handler / monitor
 	volatile uint32_t* core1_addr2=(volatile uint32_t*)0x140; // catch 1
 	core1_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
 	core1_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
@@ -971,8 +956,10 @@ int main()
 	printf("core1 now idling.\n");
 
 	int cache_counter = 0;
+	int debug_counter = 0;
 	int videocap_enabled_old = 1;
 	uint32_t framebuffer_pan_offset_old = framebuffer_pan_offset;
+	video_mode = 0x2200;
 
     while(1) {
 		u32 zstate = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG3);
@@ -1076,7 +1063,7 @@ int main()
 					framebuffer_pan_offset|=zdata;
 
 					if (framebuffer_pan_offset != framebuffer_pan_offset_old) {
-						init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
+						init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
 						video_formatter_valign();
 						framebuffer_pan_offset_old = framebuffer_pan_offset;
 					}
@@ -1177,36 +1164,34 @@ int main()
 					fill_template(bpp, rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
 				}
 				else if (zaddr==MNT_BASE_BLITTER_COLORMODE) {
-					//set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), rect_pitch);
 					blitter_colormode = zdata;
 				}
 				else if (zaddr==MNT_BASE_VDIV) {
-					printf("VDIV change: %d -> %ld\n",vdiv,zdata);
-					vdiv=zdata;
+					// retired
 				}
 
 				else if (zaddr==MNT_BASE_MODE) {
-					printf("Mode change: %ld\n",zdata);
+					printf("mode change: %x\n",zdata);
 
 					if (video_mode != zdata) {
-						video_mode_init(zdata, 1, 2, hdiv, vdiv);
+						int mode = zdata&0xff;
+						int colormode = (zdata&0xf00)>>8;
+						int scalemode = (zdata&0xf000)>>12;
+						printf("mode: %d color: %d scale: %d\n",mode,colormode,scalemode);
+
+						video_mode_init(mode, scalemode, colormode);
 					}
 					// remember selected video mode
 					video_mode = zdata;
 				}
 				else if (zaddr==MNT_BASE_HSIZE) {
-					//printf("vmode_hsize change: %ld -> %ld\n",vmode_hsize,zdata);
-					//vmode_hsize=zdata;
-					//init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
+					// retired
 				}
 				else if (zaddr==MNT_BASE_VSIZE) {
-					//printf("vmode_vsize change: %ld -> %ld\n",vmode_vsize,zdata);
-					//vmode_vsize=zdata;
-					//init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
+					// retired
 				}
 				else if (zaddr==MNT_BASE_HDIV) {
-					printf("hdiv change: %d -> %ld\n",hdiv,zdata);
-					hdiv=zdata;
+					// retired
 				}
 				else if (zaddr==MNT_BASE_BLIT_SRC_PITCH) {
 					blitter_src_pitch = zdata;
@@ -1399,7 +1384,6 @@ int main()
 			// 640x480x8
 			// 10000: 5688 op/s
 			// 25000: 5700-5900 op/s
-			// 50000: 5782op/s
 
 			// we flush the cache at regular intervals to avoid too much visible cache activity on the screen
 			// FIXME make this adjustable for user
@@ -1411,35 +1395,44 @@ int main()
 
 			int videocap_enabled = (zstate_raw&(1<<23));
 
-			if (videocap_enabled) {
+			// FIXME magic constant
+			if (videocap_enabled && framebuffer_pan_offset>=0xe00000) {
 				int interlace = !!(zstate_raw&(1<<24));
 				if (interlace != interlace_old) {
 					// interlace has changed, we need to reconfigure vdma for the new screen height
+					int vdiv = 2;
 					if (interlace) {
 						vdiv = 1;
-					} else {
-						vdiv = 2;
 					}
 					// clear videocap area
 					fb_fill(framebuffer_pan_offset/4);
-					init_vdma(vmode_hsize,vmode_vsize,hdiv,vdiv);
+					init_vdma(vmode_hsize,vmode_vsize,1,vdiv);
+					video_formatter_valign();
+					printf("videocap interlace mode changed.\n");
 				}
 				interlace_old = interlace;
 
 				if (!videocap_enabled_old) {
-					// clear videocap area
-					fb_fill(framebuffer_pan_offset/4);
 					// remember current video mode as desired video capture video mode
-					videocap_video_mode = video_mode;
+					videocap_video_mode = video_mode&0xff;
 				}
 			}
-			videocap_enabled_old = videocap_enabled;
+
+			if (videocap_enabled_old != videocap_enabled) {
+
+				printf("VCAP new state: %d\n", videocap_enabled);
+
+				if (framebuffer_pan_offset>=0xe00000) {
+					// clear videocap area
+					fb_fill(framebuffer_pan_offset/4);
+				}
+
+				videocap_enabled_old = videocap_enabled;
+			}
 
 			if (zstate==0) {
 				// RESET
 				// FIXME questionable
-				hdiv = 1;
-				vdiv = 2;
 				handle_amiga_reset();
 			}
 		}
