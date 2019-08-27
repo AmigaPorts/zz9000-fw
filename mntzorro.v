@@ -901,6 +901,8 @@ module MNTZorro_v0_1_S00_AXI
   reg [9:0] videocap_y = 0;
   reg [9:0] videocap_y2 = 0;
   reg [9:0] videocap_ymax = 0;
+  reg [9:0] videocap_ymax2 = 0;
+  reg [9:0] videocap_ymax_sync = 0;
   reg [9:0] videocap_y3 = 0;
   reg [9:0] videocap_voffset = 'h1a; //'h2a;
   reg [9:0] videocap_prex_in = 'h33; //'h42;
@@ -1003,25 +1005,26 @@ module MNTZorro_v0_1_S00_AXI
     //videocap_prex <= videocap_prex_in;
     
     if (videocap_vs[6:1]=='b111000) begin
+        
+      if (videocap_ymax[0]!=videocap_ymax2[0])
+        videocap_interlace <= 1;
+      else
+        videocap_interlace <= 0;
+      
+      if (videocap_ymax>='h138)
+        videocap_ntsc <= 0;
+      else
+        videocap_ntsc <= 1;
+      
+      // FIXME: double check
       if (videocap_y2>1) begin
-        if (videocap_ymax=='h270 || videocap_ymax=='h20c)
+      
+        videocap_lace_field <= videocap_ymax[0];
+      
+        /*if (videocap_ymax=='h270 || videocap_ymax=='h20c)
           videocap_lace_field <= 0;
         else
-          videocap_lace_field <= ~videocap_lace_field;
-        
-        if (videocap_ymax=='h138 || videocap_ymax=='h271) begin
-          videocap_interlace <= 1;
-          videocap_ntsc <= 0;
-        end else if (videocap_ymax=='h106 || videocap_ymax=='h20d) begin
-          videocap_interlace <= 1;
-          videocap_ntsc <= 1;
-        end else if (videocap_ymax=='h273) begin
-          videocap_interlace <= 0;
-          videocap_ntsc <= 0;
-        end else  if (videocap_ymax=='h20f) begin
-          videocap_interlace <= 0;
-          videocap_ntsc <= 1;
-        end
+          videocap_lace_field <= ~videocap_lace_field;*/
         
         if (videocap_interlace) begin
           videocap_y2 <= videocap_lace_field;
@@ -1030,15 +1033,19 @@ module MNTZorro_v0_1_S00_AXI
           videocap_y2 <= 0;
           videocap_voffset2 <= videocap_voffset;
         end
-        
-        videocap_ymax <= videocap_y2;
       end
+      
+      videocap_ymax <= videocap_y3;
+      videocap_ymax2 <= videocap_ymax;
+      videocap_y3 <= 0;
     end else if (videocap_hs[6:1]=='b000011) begin
       videocap_x <= 0;
       if (videocap_interlace)
         videocap_y2 <= videocap_y2 + 2'b10;
       else
         videocap_y2 <= videocap_y2 + 1'b1;
+        
+      videocap_y3 <= videocap_y3 + 1'b1;
     end else if (videocap_x<VCAPW) begin
       videocap_x <= videocap_x + 1'b1;
       videocap_buf2[videocap_x-videocap_prex] <= {8'b0,videocap_rgbin};
@@ -1177,6 +1184,10 @@ module MNTZorro_v0_1_S00_AXI
           zorro_ram_read_request <= 0;
           zorro_ram_write_request <= 0;
           zorro_interrupt <= 0;
+          video_control_data_zorro <= 0;
+          video_control_op_zorro <= 0;
+          video_control_data_axi <= 0;
+          video_control_op_axi <= 0;
           
           if (!z_reset)
             zorro_state <= DECIDE_Z2_Z3;
@@ -1848,7 +1859,7 @@ module MNTZorro_v0_1_S00_AXI
     axi_reg2 <= slv_reg2;
     axi_reg3 <= slv_reg3;
     
-    if (video_control_data_axi) begin
+    if (video_control_axi) begin
       video_control_data <= video_control_data_axi;
       video_control_op   <= video_control_op_axi;
     end else begin
@@ -1862,11 +1873,17 @@ module MNTZorro_v0_1_S00_AXI
       videocap_pitch <= video_control_data_axi[11:0];
     end
     
+    videocap_ymax_sync <= videocap_ymax;
+    
     out_reg0 <= ZORRO3 ? last_z3addr : last_addr;
     out_reg1 <= zorro_ram_write_data;
     out_reg2 <= last_z3addr;
     out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_ram_write_bytes, ZORRO3, 
                 video_control_interlace, videocap_mode, 15'b0, zorro_state};
+    //          `-- 24                   `-- 23         `-- 22 `-- 7:0
+    
+    /*out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_ram_write_bytes, ZORRO3, 
+                video_control_interlace, videocap_mode, 5'b0, videocap_ymax_sync, zorro_state};*/
   end
 
   assign slv_reg_rden = axi_arready & S_AXI_ARVALID & ~axi_rvalid;
