@@ -1005,7 +1005,6 @@ module MNTZorro_v0_1_S00_AXI
     //videocap_prex <= videocap_prex_in;
     
     if (videocap_vs[6:1]=='b111000) begin
-        
       if (videocap_ymax[0]!=videocap_ymax2[0])
         videocap_interlace <= 1;
       else
@@ -1015,24 +1014,15 @@ module MNTZorro_v0_1_S00_AXI
         videocap_ntsc <= 0;
       else
         videocap_ntsc <= 1;
-      
-      // FIXME: double check
-      if (videocap_y2>1) begin
-      
-        videocap_lace_field <= videocap_ymax[0];
-      
-        /*if (videocap_ymax=='h270 || videocap_ymax=='h20c)
-          videocap_lace_field <= 0;
-        else
-          videocap_lace_field <= ~videocap_lace_field;*/
         
-        if (videocap_interlace) begin
-          videocap_y2 <= videocap_lace_field;
-          videocap_voffset2 <= videocap_voffset<<1;
-        end else begin
-          videocap_y2 <= 0;
-          videocap_voffset2 <= videocap_voffset;
-        end
+      videocap_lace_field <= videocap_ymax[0];
+      
+      if (videocap_interlace) begin
+        videocap_y2 <= videocap_lace_field;
+        videocap_voffset2 <= videocap_voffset<<1;
+      end else begin
+        videocap_y2 <= 0;
+        videocap_voffset2 <= videocap_voffset;
       end
       
       videocap_ymax <= videocap_y3;
