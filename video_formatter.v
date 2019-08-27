@@ -100,6 +100,8 @@ reg scale_y_effective;
 reg need_frame_sync; // vga domain
 reg need_frame_sync_reg; // fetch domain
 
+reg vga_vsync_request;
+
 always @(posedge m_axis_vid_aclk)
   begin
     if (~aresetn) begin
@@ -201,7 +203,7 @@ begin
         scale_x  <= control_data_in[0];
         scale_y  <= control_data_in[1];
       end
-    OP_COLORMODE: colormode  <= control_data_in[1:0];
+    OP_COLORMODE: colormode  <= control_data_in[1:0]; // FIXME
     OP_VSYNC: vsync_request <= 1; //control_data[0];
     OP_MAX: begin
         screen_v_max <= control_data_in[31:16];
@@ -280,13 +282,14 @@ always @(posedge dvi_clk) begin
   vga_v_rez <= screen_height;
   vga_h_max <= screen_h_max;
   vga_v_max <= screen_v_max;
-  vga_h_sync_start <= screen_h_sync_start;
-  vga_h_sync_end <= screen_h_sync_end;
+  vga_h_sync_start <= screen_h_sync_start + 4;
+  vga_h_sync_end <= screen_h_sync_end + 4;
   vga_v_sync_start <= screen_v_sync_start;
   vga_v_sync_end <= screen_v_sync_end;
   vga_scale_x <= scale_x;
   vga_colormode <= colormode;
   vga_sync_polarity <= sync_polarity;
+  vga_vsync_request <= vsync_request;
   
   // FIXME there is some non-determinism in the relationship
   // between this process and the fetching process
@@ -328,12 +331,14 @@ always @(posedge dvi_clk) begin
   endcase
   
   case ({vga_scale_x,vga_colormode})
-    4'b0000: counter_scanout_step <= 3;
+    4'b0000: counter_scanout_step <= 3; // 8 bit
     4'b1000: counter_scanout_step <= 7;
-    4'b0001: counter_scanout_step <= 1;
+    4'b0001: counter_scanout_step <= 1; // 16 bit
     4'b1001: counter_scanout_step <= 3;
-    4'b0010: counter_scanout_step <= 0;
+    4'b0010: counter_scanout_step <= 0; // 32 bit
     4'b1010: counter_scanout_step <= 1;
+    //4'b0100: counter_scanout_step <= 1; // 15 bit
+    //4'b1100: counter_scanout_step <= 3;
   endcase
   
   if (counter_x>vga_h_rez) begin
@@ -369,10 +374,10 @@ always @(posedge dvi_clk) begin
   endcase
   
   dvi_rgb <= pixout;
-  
-  if (counter_x > vga_h_max) begin
+    
+  if (counter_x >= vga_h_max) begin
     counter_x <= 0;
-    if (counter_y > vga_v_max) begin
+    if (counter_y >= vga_v_max) begin
       counter_y <= 0;
     end else begin
       counter_y <= counter_y + 1'b1;
@@ -394,16 +399,16 @@ always @(posedge dvi_clk) begin
   else
     need_frame_sync <= 0;
   
-  if (counter_x>=vga_h_sync_start && counter_x<vga_h_sync_end)
+  if (counter_x>=vga_h_sync_start && counter_x<=vga_h_sync_end)
     dvi_hsync <= 1^vga_sync_polarity;
   else
     dvi_hsync <= 0^vga_sync_polarity;
     
-  if (counter_y>=vga_v_sync_start && counter_y<vga_v_sync_end)
+  if (counter_y>=vga_v_sync_start && counter_y<=vga_v_sync_end)
     dvi_vsync <= 1^vga_sync_polarity;
   else
     dvi_vsync <= 0^vga_sync_polarity;
-    
+  
   // 4 clocks pipeline delay
   vga_h_rez_shifted <= vga_h_rez+4;
   
