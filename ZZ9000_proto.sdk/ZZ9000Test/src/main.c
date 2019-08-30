@@ -1351,27 +1351,38 @@ int main()
 			}
 			else if (zaddr>=MNT_REG_BASE) {
 				// read ARM "register"
+				uint32_t data = 0;
+				uint32_t zaddr32 = zaddr&0xffffffc;
 
-				if (zaddr==MNT_BASE_EVENT_SERIAL) {
-					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, (arm_app_output_event_serial<<16)|arm_app_output_event_code);
+				if (zaddr32==MNT_BASE_EVENT_SERIAL) {
+					data = (arm_app_output_event_serial<<16)|arm_app_output_event_code;
 					arm_app_output_event_ack = 1;
 				}
-				else if (zaddr==MNT_BASE_ETH_MAC_HI) {
+				else if (zaddr32==MNT_BASE_ETH_MAC_HI) {
 					uint8_t* mac = ethernet_get_mac_address_ptr();
-					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, mac[0]<<24|mac[1]<<16|mac[2]<<8|mac[3]);
+					data = mac[0]<<24|mac[1]<<16|mac[2]<<8|mac[3];
 				}
-				else if (zaddr==MNT_BASE_ETH_MAC_LO) {
+				else if (zaddr32==MNT_BASE_ETH_MAC_LO) {
 					uint8_t* mac = ethernet_get_mac_address_ptr();
-					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, mac[4]<<24|mac[5]<<16);
+					data = mac[4]<<24|mac[5]<<16;
 				}
-				else if (zaddr==MNT_BASE_ETH_TX) {
-					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, (ethernet_send_result&0xff)<<24|(ethernet_send_result&0xff00)<<16);
+				else if (zaddr32==MNT_BASE_ETH_TX) {
+					data = (ethernet_send_result&0xff)<<24|(ethernet_send_result&0xff00)<<16;
 				}
-				else if (zaddr==MNT_BASE_FW_VERSION) {
-					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, REVISION_MAJOR<<24 | REVISION_MINOR<<16);
+				else if (zaddr32==MNT_BASE_FW_VERSION) {
+					data = (REVISION_MAJOR<<24 | REVISION_MINOR<<16);
 				}
-				else {
-					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, 0);
+
+				if (z3) {
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, data);
+				} else {
+					if (zaddr&2) {
+						// lower 16 bit
+						mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, data);
+					} else {
+						// upper 16 bit
+						mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, data>>16);
+					}
 				}
 			}
 
