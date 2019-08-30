@@ -674,12 +674,18 @@ void video_mode_init(int mode, int scalemode, int colormode) {
 //static int video_mode = ZZVMODE_720x576|2<<12|MNTVA_COLOR_32BIT<<8;
 //static int default_pan_offset = 0x00e00000;
 
-// default to more compatible, 60hz mode
+// default to more compatible 60hz mode
 static int videocap_video_mode = ZZVMODE_800x600;
 static int video_mode = ZZVMODE_800x600|2<<12|MNTVA_COLOR_32BIT<<8;
 static int default_pan_offset = 0x00e00bd0;
 
 void handle_amiga_reset() {
+	if (videocap_video_mode == ZZVMODE_800x600) {
+		default_pan_offset = 0x00e00bd0;
+	} else {
+		default_pan_offset = 0x00e00000;
+	}
+
     framebuffer_pan_offset = default_pan_offset;
     fb_fill(framebuffer_pan_offset/4);
 
