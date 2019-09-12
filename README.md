@@ -24,13 +24,38 @@ The interesting bits:
 
 ![ZZ9000 Block Design](gfx/zz9000-bd.png?raw=true "ZZ9000 Block Design")
 
-# Set up Project
+# Set up Vivado Project
 
-As Vivado projects are not suitable for version control, the Vivado project / block design is exported as a TCL script zz9000_ps.tcl. Apparently you can start vivado in TCL mode and then source this file to recreate the project incl. block design. I'm not sure yet how to automatically rebuild the SDK (Eclipse) project incl. FSBL, but all relevant sources are already in this repo.
+As Vivado projects are not suitable for version control, the Vivado project / block design is exported as a TCL script `zz9000_project.tcl`.
 
-# Build Result
+Start Vivado from your terminal in tcl mode:
 
-The Eclipse-based Vivado SDK has a built-in tool (Xilinx / Generate Boot Image) to generate the boot image `BOOT.bin` from the definition file `ZZ9000_proto.sdk/ZZ9000Test/bootimage/ZZ9000OS.bif`.
+`source settings64.sh`
+`cd /place/where/you/checked/out/zz9000-firmware`
+`vivado -mode tcl`
+
+Then, execute in the Vivado TCL shell:
+
+`source zz9000_project.tcl`
+`exit`
+
+A folder `ZZ9000_proto` should have been created. Start Vivado normally (GUI) and navigate in the Open Project dialog to `zz9000-firmware/ZZ9000_proto` and open `ZZ9000_proto.xpr`. 
+
+After a while you should be able to select "Run Synthesis" in Flow Navigator, and after that completes, "Run Implementation" and finally "Generate Bitstream". Finally, select "Export Hardware" from the "File" menu and check "Include Bitstream". Export to "Local to Project". Then, open the SDK by selecting "Launch SDK" from the "File" menu. Leave everything at "Local to Project" and click OK.
+
+Your SDK workspace will start with the `zz9000_ps_wrapper_hw_platform_0` project.
+
+To recreate a project for ZZ9000OS, go to "File" / "New" / "Application Project". Enter "ZZ9000OS" as the Project name and click "Next". Select "Empty Application". Click "Finish". Right click "ZZ9000OS" in your Project Explorer and select "Import". Select "General" / "File System", click "Next". Select the `ZZ9000_proto.sdk` / `ZZ9000Test` subfolder in your `zz9000-firmware` folder. Check the checkmark next to "ZZ9000Test". Click Finish. Select "Yes to all" in the overwrite dialog. Now you will be able to build ZZ9000OS.
+
+Before the next step, configure your BSP Project. Expand the ZZ9000OS_bsp node and double click `system.mss`. Click "Modify this BSP's Settings". Check `xilffs` in the Supported Libraries.
+
+To recreate the bootloader project, go to "File" / "New" / "Application Project". Enter "ZZ9000FSBL" as the Project name, select "Use existing" under Target Software and click "Next". Select "Zynq FSBL". Click "Finish".
+
+# Building BOOT.bin
+
+The Eclipse-based Vivado SDK has a built-in tool (Menu "Xilinx" / "Create Boot Image") to generate the boot image `BOOT.bin`. To prepare, open `ZZ9000_proto.sdk/ZZ9000Test/bootimage/ZZ9000OS.bif` in a text editor and change the absolute paths to match the correct ELF files on your filesystem.
+
+In the "Create Boot Image" dialog, select "Import from existing BIF file" and select the definition file `ZZ9000_proto.sdk/ZZ9000Test/bootimage/ZZ9000OS.bif` and click "Create Image".
 
 `BOOT.bin` contains 3 files (“partitions”):
 
