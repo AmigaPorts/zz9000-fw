@@ -30,14 +30,14 @@ As Vivado projects are not suitable for version control, the Vivado project / bl
 
 Start Vivado from your terminal in tcl mode:
 
-`source settings64.sh`
-`cd /place/where/you/checked/out/zz9000-firmware`
-`vivado -mode tcl`
+```source settings64.sh
+cd /place/where/you/checked/out/zz9000-firmware
+vivado -mode tcl```
 
 Then, execute in the Vivado TCL shell:
 
-`source zz9000_project.tcl`
-`exit`
+```source zz9000_project.tcl
+exit```
 
 A folder `ZZ9000_proto` should have been created. Start Vivado normally (GUI) and navigate in the Open Project dialog to `zz9000-firmware/ZZ9000_proto` and open `ZZ9000_proto.xpr`. 
 
