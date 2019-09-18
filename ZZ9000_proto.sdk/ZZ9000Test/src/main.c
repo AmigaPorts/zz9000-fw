@@ -1118,10 +1118,12 @@ int main()
 					}*/
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x14) {
+					// copy rectangle
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
 
-					// copy rectangle
-					if (blitter_colormode==MNTVA_COLOR_16BIT565) {
+					copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode);
+
+					/*if (blitter_colormode==MNTVA_COLOR_16BIT565) {
 						// 16 bit
 						copy_rect16(rect_x1,rect_y1,rect_x2,rect_y2,rect_x3,rect_y3);
 					} else if (blitter_colormode==MNTVA_COLOR_8BIT) {
@@ -1130,7 +1132,7 @@ int main()
 					} else {
 						// 32 bit
 						copy_rect32(rect_x1,rect_y1,rect_x2,rect_y2,rect_x3,rect_y3);
-					}
+					}*/
 					Xil_DCacheFlush();
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x16) {

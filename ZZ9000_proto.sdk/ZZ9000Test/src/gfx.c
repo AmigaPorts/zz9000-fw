@@ -100,6 +100,51 @@ void fill_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t 
 	}
 }
 
+void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format)
+{
+	uint16_t w = rect_x2 - rect_x1 + 1, h = rect_y2 - rect_y1;
+	uint32_t* dp = fb + (rect_y1 * fb_pitch);
+	uint32_t* sp = fb + (rect_sy * fb_pitch);
+
+	int32_t line_step = fb_pitch;
+	int8_t x_reverse = 0;
+
+	if (rect_sy < rect_y1) {
+		line_step = -fb_pitch;
+		dp = fb + (rect_y2 * fb_pitch);
+		sp = fb + ((rect_sy + h) * fb_pitch);
+	}
+
+	if (rect_sx < rect_x1) {
+		x_reverse = 1;
+	}
+
+	for (uint16_t y_line = 0; y_line <= h; y_line++) {
+		switch(color_format) {
+			case MNTVA_COLOR_8BIT:
+				if (!x_reverse)
+					memcpy((uint8_t *)dp + rect_x1, (uint8_t *)sp + rect_sx, w);
+				else
+					memmove((uint8_t *)dp + rect_x1, (uint8_t *)sp + rect_sx, w);
+				break;
+			case MNTVA_COLOR_16BIT565:
+				if (!x_reverse)
+					memcpy((uint16_t *)dp + rect_x1, (uint16_t *)sp + rect_sx, w * 2);
+				else
+					memmove((uint16_t *)dp + rect_x1, (uint16_t *)sp + rect_sx, w * 2);
+				break;
+			case MNTVA_COLOR_32BIT:
+				if (!x_reverse)
+					memcpy(dp + rect_x1, sp + rect_sx, w * 4);
+				else
+					memmove(dp + rect_x1, sp + rect_sx, w * 4);
+				break;
+		}
+		dp += line_step;
+		sp += line_step;
+	}
+}
+
 void copy_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy) {
 	int8_t ystep=1, xstep=1;
 	uint16_t tmp;
