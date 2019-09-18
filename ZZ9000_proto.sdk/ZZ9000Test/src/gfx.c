@@ -231,6 +231,135 @@ void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t r
 
 // inspired by UAE code. needs cleanup / optimization
 
+#define PATTERN_FILLRECT_LOOPX \
+	tmpl_x++; \
+	if (loop_rows) \
+		tmpl_x = tmpl_x % 2; \
+	cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+#define PATTERN_FILLRECT_LOOPY \
+	tmpl_data += (loop_rows > 0) ? 2 : tmpl_pitch; \
+	if (loop_rows && (y_line + y_offset + 1) % loop_rows == 0) \
+		tmpl_data = tmpl_base; \
+	tmpl_x = tmpl_x_base; \
+	cur_bit = base_bit; \
+	dp += fb_pitch / 4;
+
+void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2,
+	uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color,
+	uint16_t x_offset, uint16_t y_offset,
+	uint8_t *tmpl_data, uint16_t tmpl_pitch, uint16_t loop_rows)
+{
+	uint16_t h = rect_y2 - rect_y1;
+	uint32_t *dp = fb + (rect_y1 * (fb_pitch / 4));
+	uint8_t* tmpl_base = tmpl_data;
+
+	uint16_t tmpl_x, tmpl_x_base;
+
+	uint8_t cur_bit, base_bit, inversion = 0;
+	uint8_t u8_fg = fg_color >> 24;
+	uint8_t u8_bg = bg_color >> 24;
+	uint8_t cur_byte = 0;
+
+	tmpl_x = x_offset / 8;
+	if (loop_rows) {
+		tmpl_x %= 2;
+		tmpl_data += (y_offset % loop_rows) * 2;
+	}
+	tmpl_x_base = tmpl_x;
+
+	cur_bit = base_bit = (0x80 >> (x_offset % 8));
+
+	if (draw_mode & INVERSVID) inversion = 1;
+	draw_mode &= 0x03;
+
+	if (draw_mode == JAM1) {
+		for (uint16_t y_line = 0; y_line <= h; y_line++) {
+			uint16_t x = rect_x1;
+
+			cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+			while (x <= rect_x2) {
+				if (cur_bit == 0x80 && x <= rect_x2 - 8) {
+					SET_FG_PIXELS;
+					x += 8;
+				}
+				else {
+					while (cur_bit > 0 && x <= rect_x2) {
+						if (cur_byte & cur_bit) {
+							SET_FG_PIXEL;
+						}
+						x++;
+						cur_bit >>= 1;
+					}
+					cur_bit = 0x80;
+				}
+				PATTERN_FILLRECT_LOOPX;
+			}
+			PATTERN_FILLRECT_LOOPY;
+		}
+
+		return;
+	}
+	else if (draw_mode == JAM2) {
+		for (uint16_t y_line = 0; y_line <= h; y_line++) {
+			uint16_t x = rect_x1;
+
+			cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+			while (x <= rect_x2) {
+				if (cur_bit == 0x80 && x <= rect_x2 - 8) {
+					SET_FG_OR_BG_PIXELS;
+					x += 8;
+				}
+				else {
+					while (cur_bit > 0 && x <= rect_x2) {
+						if (cur_byte & cur_bit) {
+							SET_FG_PIXEL;
+						}
+						else {
+							SET_BG_PIXEL;
+						}
+						x++;
+						cur_bit >>= 1;
+					}
+					cur_bit = 0x80;
+				}
+				PATTERN_FILLRECT_LOOPX;
+			}
+			PATTERN_FILLRECT_LOOPY;
+		}
+
+		return;
+	}
+	else { // COMPLEMENT
+		for (uint16_t y_line = 0; y_line <= h; y_line++) {
+			uint16_t x = rect_x1;
+
+			cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+			while (x <= rect_x2) {
+				if (cur_bit == 0x80 && x <= rect_x2 - 8) {
+					INVERT_PIXELS;
+					x += 8;
+				}
+				else {
+					while (cur_bit > 0 && x <= rect_x2) {
+						if (cur_byte & cur_bit) {
+							INVERT_PIXEL;
+						}
+						x++;
+						cur_bit >>= 1;
+					}
+					cur_bit = 0x80;
+				}
+				PATTERN_FILLRECT_LOOPX;
+			}
+			PATTERN_FILLRECT_LOOPY;	
+		}
+	}
+}
+
 void fill_template(uint32_t bpp, uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2,
 		uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color, uint16_t x_offset, uint16_t y_offset, uint8_t* tmpl_data, uint16_t tmpl_pitch, uint16_t loop_rows)
 {

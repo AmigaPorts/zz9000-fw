@@ -1166,7 +1166,8 @@ int main()
 						printf("blitter_src_pitch: %d\n\n", blitter_src_pitch);*/
 					}
 
-					fill_template(bpp, rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
+					//fill_template(bpp, rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
+					pattern_fill_rect((blitter_colormode & 0x0F), rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
 				}
 				else if (zaddr==MNT_BASE_BLITTER_COLORMODE) {
 					blitter_colormode = zdata;
