@@ -51,12 +51,6 @@ typedef u8 uint8_t;
 #define IIC_SCLK_RATE	400000
 #define GPIO_DEVICE_ID		XPAR_XGPIOPS_0_DEVICE_ID
 
-#define MNTVA_COLOR_8BIT     0
-#define MNTVA_COLOR_16BIT565 1
-#define MNTVA_COLOR_32BIT    2
-#define MNTVA_COLOR_1BIT     3
-#define MNTVA_COLOR_15BIT    4
-
 #define I2C_PAUSE 10
 
 // I2C controller instance
@@ -1113,13 +1107,15 @@ int main()
 
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
 
-					if (blitter_colormode==MNTVA_COLOR_16BIT565) {
+					fill_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_rgb, blitter_colormode);
+
+					/*if (blitter_colormode==MNTVA_COLOR_16BIT565) {
 						fill_rect16(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
 					} else if (blitter_colormode==MNTVA_COLOR_8BIT) {
 						fill_rect8(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb>>24);
 					} else if (blitter_colormode==MNTVA_COLOR_32BIT) {
 						fill_rect32(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
-					}
+					}*/
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x14) {
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);

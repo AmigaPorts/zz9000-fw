@@ -39,6 +39,39 @@ void horizline(uint16_t x1, uint16_t x2, uint16_t y, uint32_t color) {
 	}
 }
 
+void fill_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb, uint32_t color_format)
+{
+	uint32_t* p = fb + (rect_y1 * fb_pitch);
+	uint16_t* p16;
+	uint16_t w = rect_x2 - rect_x1;
+	uint16_t x;
+
+	for (uint16_t cur_y = rect_y1; cur_y <= rect_y2; cur_y++) {
+		switch(color_format) {
+			case MNTVA_COLOR_8BIT:
+				memset((uint8_t *)p + rect_x1, (uint8_t)(rect_rgb >> 24), w + 1);
+				break;
+			case MNTVA_COLOR_16BIT565:
+				x = rect_x1;
+				p16 = (uint16_t *)p;
+				while(x <= rect_x2) {
+					p16[x++] = rect_rgb;
+				}
+				break;
+			case MNTVA_COLOR_32BIT:
+				x = rect_x1;
+				while(x <= rect_x2) {
+					p[x++] = rect_rgb;
+				}
+				break;
+			default:
+				// Unknown/unhandled color format.
+				break;
+		}
+		p += fb_pitch;
+	}
+}
+
 void fill_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb) {
 	for (uint16_t y=rect_y1; y<=rect_y2; y++) {
 		uint32_t* p=fb+y*fb_pitch;

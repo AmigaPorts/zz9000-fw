@@ -24,6 +24,7 @@ typedef struct Vec2 {
 void set_fb(uint32_t* fb_, uint32_t pitch);
 void horizline(uint16_t x1, uint16_t x2, uint16_t y, uint32_t color);
 
+void fill_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb, uint32_t color_format);
 void fill_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint8_t rect_rgb);
 void fill_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_rgb);
 void fill_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb);
@@ -35,3 +36,8 @@ void copy_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t 
 void fill_template(uint32_t bpp, uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2,
 		uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color, uint16_t x_offset, uint16_t y_offset, uint8_t* tmpl_data, uint16_t templ_pitch, uint16_t loop_rows);
 
+#define MNTVA_COLOR_8BIT     0
+#define MNTVA_COLOR_16BIT565 1
+#define MNTVA_COLOR_32BIT    2
+#define MNTVA_COLOR_1BIT     3
+#define MNTVA_COLOR_15BIT    4
