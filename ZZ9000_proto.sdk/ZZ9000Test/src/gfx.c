@@ -16,9 +16,16 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include "gfx.h"
+
+// see http://amigadev.elowar.com/read/ADCD_2.1/Libraries_Manual_guide/node0351.html
+#define JAM1	    0	      /* jam 1 color into raster */
+#define JAM2	    1	      /* jam 2 colors into raster */
+#define COMPLEMENT  2	      /* XOR bits into raster */
+#define INVERSVID   4	      /* inverse video for drawing modes */
 
 static uint32_t* fb=0;
 static uint32_t fb_pitch=0;
@@ -223,11 +230,170 @@ void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t r
 	}
 }
 
-// see http://amigadev.elowar.com/read/ADCD_2.1/Libraries_Manual_guide/node0351.html
-#define JAM1	    0	      /* jam 1 color into raster */
-#define JAM2	    1	      /* jam 2 colors into raster */
-#define COMPLEMENT  2	      /* XOR bits into raster */
-#define INVERSVID   4	      /* inverse video for drawing modes */
+#define DRAW_LINE_PIXEL \
+	if (draw_mode == JAM1) { \
+		if(pattern & cur_bit) { \
+			if (!inversion) { \
+				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_FG_PIXEL; } \
+				else { SET_FG_PIXEL8_MASK } \
+			} \
+			else { INVERT_PIXEL; } \
+		} \
+	} \
+	else { \
+		if(pattern & cur_bit) { \
+			if (!inversion) { \
+				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_FG_PIXEL; } \
+				else { SET_FG_PIXEL8_MASK; } \
+			} \
+			else { INVERT_PIXEL; } /* JAM2 and complement is kind of useless, as it ends up being the same visual result as JAM1 and a pattern of 0xFFFF */ \
+		} \
+		else { \
+			if (!inversion) { \
+				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_BG_PIXEL; } \
+				else { SET_BG_PIXEL8_MASK; } \
+			} \
+			else { INVERT_PIXEL; } \
+		} \
+	} \
+	if ((cur_bit >>= 1) == 0) \
+		cur_bit = 0x8000; \
+
+// Sneakily adapted version of the good old Bresenham algorithm
+void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2,
+	uint16_t pattern, uint16_t pattern_offset,
+	uint32_t fg_color, uint32_t bg_color, uint32_t color_format,
+	uint8_t mask, uint8_t draw_mode)
+{
+	int16_t x1 = rect_x1, y1 = rect_y1;
+	int16_t x2 = rect_x1 + rect_x2, y2 = rect_y1 + rect_y2;
+
+	uint8_t u8_fg = fg_color >> 24;
+	uint8_t u8_bg = bg_color >> 24;
+
+	uint32_t* dp = fb + (y1 * fb_pitch);
+	int32_t line_step = fb_pitch;
+	int8_t x_reverse = 0, inversion = 0;
+
+	uint16_t cur_bit = 0x8000;
+
+	int16_t dx, dy, dx_abs, dy_abs, ix, iy, x = x1;
+
+	if (x2 < x1)
+		x_reverse = 1;
+	if (y2 < y1)
+		line_step = -fb_pitch;
+
+	if (draw_mode & INVERSVID)
+		pattern ^= 0xFFFF;
+	if (draw_mode & COMPLEMENT) {
+		inversion = 1;
+		fg_color = 0xFFFF0000;
+	}
+	draw_mode &= 0x01;
+
+	dx = x2 - x1;
+	dy = y2 - y1;
+	dx_abs = abs(dx);
+	dy_abs = abs(dy);
+	ix = dy_abs >> 1;
+	iy = dx_abs >> 1;
+
+	// This can't be used for now, as Flags from the current RastPort struct is not exposed by [ P96 2.4.2 ]
+	/*if ((pattern_offset >> 8) & 0x01) { // Is FRST_DOT set?
+		cur_bit = 0x8000;
+		fg_color = 0xFFFF0000;
+	}
+	else {
+		fg_color = 0xFF00FF00;
+		cur_bit >>= ((pattern_offset & 0xFF) % 16);
+	}
+	
+	if (cur_bit == 0)
+		cur_bit = 0x8000;*/
+
+
+	DRAW_LINE_PIXEL;
+
+	if (dx_abs >= dy_abs) {
+		for (uint16_t i = 0; i < dx_abs; i++) {
+			iy += dy_abs;
+			if (iy >= dx_abs) {
+				iy -= dx_abs;
+				dp += line_step;
+			}
+			x += (x_reverse) ? -1 : 1;
+
+			DRAW_LINE_PIXEL;
+		}
+	}
+	else {
+		for(uint16_t i = 0; i < dy_abs; i++) {
+			ix += dx_abs;
+			if (ix >= dy_abs) {
+				ix -= dy_abs;
+				x += (x_reverse) ? -1 : 1;
+			}
+			dp += line_step;
+
+			DRAW_LINE_PIXEL;
+		}
+	}
+}
+
+void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2,
+	uint32_t fg_color, uint32_t color_format)
+{
+	int16_t x1 = rect_x1, y1 = rect_y1;
+	int16_t x2 = rect_x1 + rect_x2, y2 = rect_y1 + rect_y2;
+
+	uint8_t u8_fg = fg_color >> 24;
+
+	uint32_t* dp = fb + (y1 * fb_pitch);
+	int32_t line_step = fb_pitch;
+	int8_t x_reverse = 0;
+
+	int16_t dx, dy, dx_abs, dy_abs, ix, iy, x = x1;
+
+	if (x2 < x1)
+		x_reverse = 1;
+	if (y2 < y1)
+		line_step = -fb_pitch;
+
+	dx = x2 - x1;
+	dy = y2 - y1;
+	dx_abs = abs(dx);
+	dy_abs = abs(dy);
+	ix = dy_abs >> 1;
+	iy = dx_abs >> 1;
+
+	SET_FG_PIXEL;
+
+	if (dx_abs >= dy_abs) {
+		for (uint16_t i = 0; i < dx_abs; i++) {
+			iy += dy_abs;
+			if (iy >= dx_abs) {
+				iy -= dx_abs;
+				dp += line_step;
+			}
+			x += (x_reverse) ? -1 : 1;
+
+			SET_FG_PIXEL;
+		}
+	}
+	else {
+		for (uint16_t i = 0; i < dy_abs; i++) {
+			ix += dx_abs;
+			if (ix >= dy_abs) {
+				ix -= dy_abs;
+				x += (x_reverse) ? -1 : 1;
+			}
+			dp += line_step;
+
+			SET_FG_PIXEL;
+		}
+	}
+}
 
 // inspired by UAE code. needs cleanup / optimization
 

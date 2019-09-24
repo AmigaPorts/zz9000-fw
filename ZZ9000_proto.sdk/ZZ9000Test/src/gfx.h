@@ -41,12 +41,16 @@ void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1
 	uint16_t x_offset, uint16_t y_offset,
 	uint8_t *tmpl_data, uint16_t tmpl_pitch, uint16_t loop_rows);
 
+void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2, uint16_t pattern, uint16_t pattern_offset, uint32_t fg_color, uint32_t bg_color, uint32_t color_format, uint8_t mask, uint8_t draw_mode);
+void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2, uint32_t fg_color, uint32_t color_format);
+
 #define MNTVA_COLOR_8BIT     0
 #define MNTVA_COLOR_16BIT565 1
 #define MNTVA_COLOR_32BIT    2
 #define MNTVA_COLOR_1BIT     3
 #define MNTVA_COLOR_15BIT    4
 
+/* Macros for keeping gfx.c a bit more tidy */
 #define SET_FG_PIXEL8(a) \
 	((uint8_t *)dp)[x+a] = u8_fg;
 #define SET_FG_PIXEL16(a) \
@@ -60,6 +64,11 @@ void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1
 	((uint16_t *)dp)[x+a] = bg_color;
 #define SET_BG_PIXEL32(a) \
 	dp[x+a] = bg_color;
+
+#define SET_FG_PIXEL8_MASK \
+	((uint8_t *)dp)[x] = u8_fg ^ (((uint8_t *)dp)[x] & (mask ^ 0xFF));
+#define SET_BG_PIXEL8_MASK \
+	((uint8_t *)dp)[x] = u8_bg ^ (((uint8_t *)dp)[x] & (mask ^ 0xFF));
 
 #define SET_FG_PIXEL \
 	switch (color_format) { \
@@ -152,11 +161,31 @@ void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1
 #define INVERT_PIXEL \
 	switch (color_format) { \
 		case MNTVA_COLOR_8BIT: \
-			((uint8_t *)dp)[x] ^= 0xFF; break; \
+			((uint8_t *)dp)[x] ^= mask; break; \
 		case MNTVA_COLOR_16BIT565: \
 			((uint16_t *)dp)[x] ^= 0xFFFF; break; \
 		case MNTVA_COLOR_32BIT: \
 			dp[x] ^= 0xFFFFFFFF; break; \
+	}
+
+#define INVERT_PIXEL_FG \
+	switch (color_format) { \
+		case MNTVA_COLOR_8BIT: \
+			((uint8_t *)dp)[x] = u8_fg ^ 0xFF; break; \
+		case MNTVA_COLOR_16BIT565: \
+			((uint16_t *)dp)[x] ^= fg_color; break; \
+		case MNTVA_COLOR_32BIT: \
+			dp[x] ^= fg_color; break; \
+	}
+
+#define INVERT_PIXEL_BG \
+	switch (color_format) { \
+		case MNTVA_COLOR_8BIT: \
+			((uint8_t *)dp)[x] ^= u8_bg; break; \
+		case MNTVA_COLOR_16BIT565: \
+			((uint16_t *)dp)[x] ^= bg_color; break; \
+		case MNTVA_COLOR_32BIT: \
+			dp[x] ^= bg_color; break; \
 	}
 
 #define INVERT_PIXELS \
