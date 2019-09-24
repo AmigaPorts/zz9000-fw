@@ -51,12 +51,6 @@ typedef u8 uint8_t;
 #define IIC_SCLK_RATE	400000
 #define GPIO_DEVICE_ID		XPAR_XGPIOPS_0_DEVICE_ID
 
-#define MNTVA_COLOR_8BIT     0
-#define MNTVA_COLOR_16BIT565 1
-#define MNTVA_COLOR_32BIT    2
-#define MNTVA_COLOR_1BIT     3
-#define MNTVA_COLOR_15BIT    4
-
 #define I2C_PAUSE 10
 
 // I2C controller instance
@@ -1113,19 +1107,23 @@ int main()
 
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
 
-					if (blitter_colormode==MNTVA_COLOR_16BIT565) {
+					fill_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_rgb, blitter_colormode);
+
+					/*if (blitter_colormode==MNTVA_COLOR_16BIT565) {
 						fill_rect16(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
 					} else if (blitter_colormode==MNTVA_COLOR_8BIT) {
 						fill_rect8(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb>>24);
 					} else if (blitter_colormode==MNTVA_COLOR_32BIT) {
 						fill_rect32(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
-					}
+					}*/
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x14) {
+					// copy rectangle
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
 
-					// copy rectangle
-					if (blitter_colormode==MNTVA_COLOR_16BIT565) {
+					copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode);
+
+					/*if (blitter_colormode==MNTVA_COLOR_16BIT565) {
 						// 16 bit
 						copy_rect16(rect_x1,rect_y1,rect_x2,rect_y2,rect_x3,rect_y3);
 					} else if (blitter_colormode==MNTVA_COLOR_8BIT) {
@@ -1134,7 +1132,7 @@ int main()
 					} else {
 						// 32 bit
 						copy_rect32(rect_x1,rect_y1,rect_x2,rect_y2,rect_x3,rect_y3);
-					}
+					}*/
 					Xil_DCacheFlush();
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x16) {
@@ -1168,7 +1166,19 @@ int main()
 						printf("blitter_src_pitch: %d\n\n", blitter_src_pitch);*/
 					}
 
-					fill_template(bpp, rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
+					//fill_template(bpp, rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
+					pattern_fill_rect((blitter_colormode & 0x0F), rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
+				}
+				else if (zaddr==MNT_BASE_RECTOP+0xA6) {
+					// DrawLine
+					uint8_t draw_mode = blitter_colormode >> 8;
+					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
+
+					// rect_x3 contains the pattern, if all bits are set for both the mask and the pattern, there's no point in passing non-essential data to the pattern/mask aware function.
+					if (rect_x3 == 0xFFFF && zdata == 0xFF)
+						draw_line_solid(rect_x1, rect_y1, rect_x2, rect_y2, rect_rgb, (blitter_colormode & 0x0F));
+					else
+						draw_line(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, rect_rgb, rect_rgb2, (blitter_colormode & 0x0F), zdata, draw_mode);
 				}
 				else if (zaddr==MNT_BASE_BLITTER_COLORMODE) {
 					blitter_colormode = zdata;

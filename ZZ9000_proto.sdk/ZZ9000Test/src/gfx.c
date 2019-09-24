@@ -16,9 +16,16 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include "gfx.h"
+
+// see http://amigadev.elowar.com/read/ADCD_2.1/Libraries_Manual_guide/node0351.html
+#define JAM1	    0	      /* jam 1 color into raster */
+#define JAM2	    1	      /* jam 2 colors into raster */
+#define COMPLEMENT  2	      /* XOR bits into raster */
+#define INVERSVID   4	      /* inverse video for drawing modes */
 
 static uint32_t* fb=0;
 static uint32_t fb_pitch=0;
@@ -36,6 +43,39 @@ void horizline(uint16_t x1, uint16_t x2, uint16_t y, uint32_t color) {
 	}
 	while (x1>x2) {
 		p[x1--]=color;
+	}
+}
+
+void fill_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb, uint32_t color_format)
+{
+	uint32_t* p = fb + (rect_y1 * fb_pitch);
+	uint16_t* p16;
+	uint16_t w = rect_x2 - rect_x1;
+	uint16_t x;
+
+	for (uint16_t cur_y = rect_y1; cur_y <= rect_y2; cur_y++) {
+		switch(color_format) {
+			case MNTVA_COLOR_8BIT:
+				memset((uint8_t *)p + rect_x1, (uint8_t)(rect_rgb >> 24), w + 1);
+				break;
+			case MNTVA_COLOR_16BIT565:
+				x = rect_x1;
+				p16 = (uint16_t *)p;
+				while(x <= rect_x2) {
+					p16[x++] = rect_rgb;
+				}
+				break;
+			case MNTVA_COLOR_32BIT:
+				x = rect_x1;
+				while(x <= rect_x2) {
+					p[x++] = rect_rgb;
+				}
+				break;
+			default:
+				// Unknown/unhandled color format.
+				break;
+		}
+		p += fb_pitch;
 	}
 }
 
@@ -64,6 +104,51 @@ void fill_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t 
 		for (uint16_t x=rect_x1; x<=rect_x2; x++) {
 			p[x]=rect_rgb;
 		}
+	}
+}
+
+void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format)
+{
+	uint16_t w = rect_x2 - rect_x1 + 1, h = rect_y2 - rect_y1;
+	uint32_t* dp = fb + (rect_y1 * fb_pitch);
+	uint32_t* sp = fb + (rect_sy * fb_pitch);
+
+	int32_t line_step = fb_pitch;
+	int8_t x_reverse = 0;
+
+	if (rect_sy < rect_y1) {
+		line_step = -fb_pitch;
+		dp = fb + (rect_y2 * fb_pitch);
+		sp = fb + ((rect_sy + h) * fb_pitch);
+	}
+
+	if (rect_sx < rect_x1) {
+		x_reverse = 1;
+	}
+
+	for (uint16_t y_line = 0; y_line <= h; y_line++) {
+		switch(color_format) {
+			case MNTVA_COLOR_8BIT:
+				if (!x_reverse)
+					memcpy((uint8_t *)dp + rect_x1, (uint8_t *)sp + rect_sx, w);
+				else
+					memmove((uint8_t *)dp + rect_x1, (uint8_t *)sp + rect_sx, w);
+				break;
+			case MNTVA_COLOR_16BIT565:
+				if (!x_reverse)
+					memcpy((uint16_t *)dp + rect_x1, (uint16_t *)sp + rect_sx, w * 2);
+				else
+					memmove((uint16_t *)dp + rect_x1, (uint16_t *)sp + rect_sx, w * 2);
+				break;
+			case MNTVA_COLOR_32BIT:
+				if (!x_reverse)
+					memcpy(dp + rect_x1, sp + rect_sx, w * 4);
+				else
+					memmove(dp + rect_x1, sp + rect_sx, w * 4);
+				break;
+		}
+		dp += line_step;
+		sp += line_step;
 	}
 }
 
@@ -145,13 +230,301 @@ void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t r
 	}
 }
 
-// see http://amigadev.elowar.com/read/ADCD_2.1/Libraries_Manual_guide/node0351.html
-#define JAM1	    0	      /* jam 1 color into raster */
-#define JAM2	    1	      /* jam 2 colors into raster */
-#define COMPLEMENT  2	      /* XOR bits into raster */
-#define INVERSVID   4	      /* inverse video for drawing modes */
+#define DRAW_LINE_PIXEL \
+	if (draw_mode == JAM1) { \
+		if(pattern & cur_bit) { \
+			if (!inversion) { \
+				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_FG_PIXEL; } \
+				else { SET_FG_PIXEL8_MASK } \
+			} \
+			else { INVERT_PIXEL; } \
+		} \
+	} \
+	else { \
+		if(pattern & cur_bit) { \
+			if (!inversion) { \
+				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_FG_PIXEL; } \
+				else { SET_FG_PIXEL8_MASK; } \
+			} \
+			else { INVERT_PIXEL; } /* JAM2 and complement is kind of useless, as it ends up being the same visual result as JAM1 and a pattern of 0xFFFF */ \
+		} \
+		else { \
+			if (!inversion) { \
+				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_BG_PIXEL; } \
+				else { SET_BG_PIXEL8_MASK; } \
+			} \
+			else { INVERT_PIXEL; } \
+		} \
+	} \
+	if ((cur_bit >>= 1) == 0) \
+		cur_bit = 0x8000; \
+
+// Sneakily adapted version of the good old Bresenham algorithm
+void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2,
+	uint16_t pattern, uint16_t pattern_offset,
+	uint32_t fg_color, uint32_t bg_color, uint32_t color_format,
+	uint8_t mask, uint8_t draw_mode)
+{
+	int16_t x1 = rect_x1, y1 = rect_y1;
+	int16_t x2 = rect_x1 + rect_x2, y2 = rect_y1 + rect_y2;
+
+	uint8_t u8_fg = fg_color >> 24;
+	uint8_t u8_bg = bg_color >> 24;
+
+	uint32_t* dp = fb + (y1 * fb_pitch);
+	int32_t line_step = fb_pitch;
+	int8_t x_reverse = 0, inversion = 0;
+
+	uint16_t cur_bit = 0x8000;
+
+	int16_t dx, dy, dx_abs, dy_abs, ix, iy, x = x1;
+
+	if (x2 < x1)
+		x_reverse = 1;
+	if (y2 < y1)
+		line_step = -fb_pitch;
+
+	if (draw_mode & INVERSVID)
+		pattern ^= 0xFFFF;
+	if (draw_mode & COMPLEMENT) {
+		inversion = 1;
+		fg_color = 0xFFFF0000;
+	}
+	draw_mode &= 0x01;
+
+	dx = x2 - x1;
+	dy = y2 - y1;
+	dx_abs = abs(dx);
+	dy_abs = abs(dy);
+	ix = dy_abs >> 1;
+	iy = dx_abs >> 1;
+
+	// This can't be used for now, as Flags from the current RastPort struct is not exposed by [ P96 2.4.2 ]
+	/*if ((pattern_offset >> 8) & 0x01) { // Is FRST_DOT set?
+		cur_bit = 0x8000;
+		fg_color = 0xFFFF0000;
+	}
+	else {
+		fg_color = 0xFF00FF00;
+		cur_bit >>= ((pattern_offset & 0xFF) % 16);
+	}
+	
+	if (cur_bit == 0)
+		cur_bit = 0x8000;*/
+
+
+	DRAW_LINE_PIXEL;
+
+	if (dx_abs >= dy_abs) {
+		for (uint16_t i = 0; i < dx_abs; i++) {
+			iy += dy_abs;
+			if (iy >= dx_abs) {
+				iy -= dx_abs;
+				dp += line_step;
+			}
+			x += (x_reverse) ? -1 : 1;
+
+			DRAW_LINE_PIXEL;
+		}
+	}
+	else {
+		for(uint16_t i = 0; i < dy_abs; i++) {
+			ix += dx_abs;
+			if (ix >= dy_abs) {
+				ix -= dy_abs;
+				x += (x_reverse) ? -1 : 1;
+			}
+			dp += line_step;
+
+			DRAW_LINE_PIXEL;
+		}
+	}
+}
+
+void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2,
+	uint32_t fg_color, uint32_t color_format)
+{
+	int16_t x1 = rect_x1, y1 = rect_y1;
+	int16_t x2 = rect_x1 + rect_x2, y2 = rect_y1 + rect_y2;
+
+	uint8_t u8_fg = fg_color >> 24;
+
+	uint32_t* dp = fb + (y1 * fb_pitch);
+	int32_t line_step = fb_pitch;
+	int8_t x_reverse = 0;
+
+	int16_t dx, dy, dx_abs, dy_abs, ix, iy, x = x1;
+
+	if (x2 < x1)
+		x_reverse = 1;
+	if (y2 < y1)
+		line_step = -fb_pitch;
+
+	dx = x2 - x1;
+	dy = y2 - y1;
+	dx_abs = abs(dx);
+	dy_abs = abs(dy);
+	ix = dy_abs >> 1;
+	iy = dx_abs >> 1;
+
+	SET_FG_PIXEL;
+
+	if (dx_abs >= dy_abs) {
+		for (uint16_t i = 0; i < dx_abs; i++) {
+			iy += dy_abs;
+			if (iy >= dx_abs) {
+				iy -= dx_abs;
+				dp += line_step;
+			}
+			x += (x_reverse) ? -1 : 1;
+
+			SET_FG_PIXEL;
+		}
+	}
+	else {
+		for (uint16_t i = 0; i < dy_abs; i++) {
+			ix += dx_abs;
+			if (ix >= dy_abs) {
+				ix -= dy_abs;
+				x += (x_reverse) ? -1 : 1;
+			}
+			dp += line_step;
+
+			SET_FG_PIXEL;
+		}
+	}
+}
 
 // inspired by UAE code. needs cleanup / optimization
+
+#define PATTERN_FILLRECT_LOOPX \
+	tmpl_x++; \
+	if (loop_rows) \
+		tmpl_x = tmpl_x % 2; \
+	cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+#define PATTERN_FILLRECT_LOOPY \
+	tmpl_data += (loop_rows > 0) ? 2 : tmpl_pitch; \
+	if (loop_rows && (y_line + y_offset + 1) % loop_rows == 0) \
+		tmpl_data = tmpl_base; \
+	tmpl_x = tmpl_x_base; \
+	cur_bit = base_bit; \
+	dp += fb_pitch / 4;
+
+void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2,
+	uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color,
+	uint16_t x_offset, uint16_t y_offset,
+	uint8_t *tmpl_data, uint16_t tmpl_pitch, uint16_t loop_rows)
+{
+	uint16_t h = rect_y2 - rect_y1;
+	uint32_t *dp = fb + (rect_y1 * (fb_pitch / 4));
+	uint8_t* tmpl_base = tmpl_data;
+
+	uint16_t tmpl_x, tmpl_x_base;
+
+	uint8_t cur_bit, base_bit, inversion = 0;
+	uint8_t u8_fg = fg_color >> 24;
+	uint8_t u8_bg = bg_color >> 24;
+	uint8_t cur_byte = 0;
+
+	tmpl_x = x_offset / 8;
+	if (loop_rows) {
+		tmpl_x %= 2;
+		tmpl_data += (y_offset % loop_rows) * 2;
+	}
+	tmpl_x_base = tmpl_x;
+
+	cur_bit = base_bit = (0x80 >> (x_offset % 8));
+
+	if (draw_mode & INVERSVID) inversion = 1;
+	draw_mode &= 0x03;
+
+	if (draw_mode == JAM1) {
+		for (uint16_t y_line = 0; y_line <= h; y_line++) {
+			uint16_t x = rect_x1;
+
+			cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+			while (x <= rect_x2) {
+				if (cur_bit == 0x80 && x <= rect_x2 - 8) {
+					SET_FG_PIXELS;
+					x += 8;
+				}
+				else {
+					while (cur_bit > 0 && x <= rect_x2) {
+						if (cur_byte & cur_bit) {
+							SET_FG_PIXEL;
+						}
+						x++;
+						cur_bit >>= 1;
+					}
+					cur_bit = 0x80;
+				}
+				PATTERN_FILLRECT_LOOPX;
+			}
+			PATTERN_FILLRECT_LOOPY;
+		}
+
+		return;
+	}
+	else if (draw_mode == JAM2) {
+		for (uint16_t y_line = 0; y_line <= h; y_line++) {
+			uint16_t x = rect_x1;
+
+			cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+			while (x <= rect_x2) {
+				if (cur_bit == 0x80 && x <= rect_x2 - 8) {
+					SET_FG_OR_BG_PIXELS;
+					x += 8;
+				}
+				else {
+					while (cur_bit > 0 && x <= rect_x2) {
+						if (cur_byte & cur_bit) {
+							SET_FG_PIXEL;
+						}
+						else {
+							SET_BG_PIXEL;
+						}
+						x++;
+						cur_bit >>= 1;
+					}
+					cur_bit = 0x80;
+				}
+				PATTERN_FILLRECT_LOOPX;
+			}
+			PATTERN_FILLRECT_LOOPY;
+		}
+
+		return;
+	}
+	else { // COMPLEMENT
+		for (uint16_t y_line = 0; y_line <= h; y_line++) {
+			uint16_t x = rect_x1;
+
+			cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+			while (x <= rect_x2) {
+				if (cur_bit == 0x80 && x <= rect_x2 - 8) {
+					INVERT_PIXELS;
+					x += 8;
+				}
+				else {
+					while (cur_bit > 0 && x <= rect_x2) {
+						if (cur_byte & cur_bit) {
+							INVERT_PIXEL;
+						}
+						x++;
+						cur_bit >>= 1;
+					}
+					cur_bit = 0x80;
+				}
+				PATTERN_FILLRECT_LOOPX;
+			}
+			PATTERN_FILLRECT_LOOPY;	
+		}
+	}
+}
 
 void fill_template(uint32_t bpp, uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2,
 		uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color, uint16_t x_offset, uint16_t y_offset, uint8_t* tmpl_data, uint16_t tmpl_pitch, uint16_t loop_rows)
