@@ -890,7 +890,6 @@ int main()
 	};
 
     init_platform();
-    //Xil_DCacheDisable(); // FIXME enabling caches doesn't yet work with ETH
 
     Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_DATA_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
     Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_PREFETCH_ABORT_INT, (Xil_ExceptionHandler)arm_exception_handler, NULL);
@@ -962,6 +961,8 @@ int main()
 	uint32_t framebuffer_pan_offset_old = framebuffer_pan_offset;
 	video_mode = 0x2200;
 
+	int backlog_nag_counter = 0;
+
     while(1) {
 		u32 zstate = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG3);
 		zstate_raw = zstate;
@@ -1017,7 +1018,8 @@ int main()
 					ptr = mem+zaddr-MNT_FB_BASE;
 				}
 				else if (zaddr<MNT_REG_BASE+0x8000) {
-					ptr = (u8*)(RX_FRAME_ADDRESS+RX_FRAME_PAD+zaddr-(MNT_REG_BASE+0x2000));
+					// FIXME remove
+					ptr = (u8*)(RX_FRAME_ADDRESS+zaddr-(MNT_REG_BASE+0x2000));
 					printf("ERXF write: %08lx\n",(u32)ptr);
 				}
 				else if (zaddr<MNT_REG_BASE+0x10000) {
@@ -1102,37 +1104,13 @@ int main()
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x12) {
 					// fill rectangle
-
-					//printf("FILL: %d %d %d %d %08lx\n",rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
-
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
-
 					fill_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_rgb, blitter_colormode);
-
-					/*if (blitter_colormode==MNTVA_COLOR_16BIT565) {
-						fill_rect16(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
-					} else if (blitter_colormode==MNTVA_COLOR_8BIT) {
-						fill_rect8(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb>>24);
-					} else if (blitter_colormode==MNTVA_COLOR_32BIT) {
-						fill_rect32(rect_x1,rect_y1,rect_x2,rect_y2,rect_rgb);
-					}*/
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x14) {
 					// copy rectangle
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
-
 					copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode);
-
-					/*if (blitter_colormode==MNTVA_COLOR_16BIT565) {
-						// 16 bit
-						copy_rect16(rect_x1,rect_y1,rect_x2,rect_y2,rect_x3,rect_y3);
-					} else if (blitter_colormode==MNTVA_COLOR_8BIT) {
-						// 8 bit
-						copy_rect8(rect_x1,rect_y1,rect_x2,rect_y2,rect_x3,rect_y3);
-					} else {
-						// 32 bit
-						copy_rect32(rect_x1,rect_y1,rect_x2,rect_y2,rect_x3,rect_y3);
-					}*/
 					Xil_DCacheFlush();
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x16) {
@@ -1166,15 +1144,16 @@ int main()
 						printf("blitter_src_pitch: %d\n\n", blitter_src_pitch);*/
 					}
 
-					//fill_template(bpp, rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
 					pattern_fill_rect((blitter_colormode & 0x0F), rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
 				}
-				else if (zaddr==MNT_BASE_RECTOP+0xA6) {
+				else if (zaddr == MNT_BASE_RECTOP + 0x2a) {
 					// DrawLine
 					uint8_t draw_mode = blitter_colormode >> 8;
-					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
+					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset), blitter_dst_pitch);
 
-					// rect_x3 contains the pattern, if all bits are set for both the mask and the pattern, there's no point in passing non-essential data to the pattern/mask aware function.
+					// rect_x3 contains the pattern. if all bits are set for both the mask and the pattern,
+					// there's no point in passing non-essential data to the pattern/mask aware function.
+
 					if (rect_x3 == 0xFFFF && zdata == 0xFF)
 						draw_line_solid(rect_x1, rect_y1, rect_x2, rect_y2, rect_rgb, (blitter_colormode & 0x0F));
 					else
@@ -1342,11 +1321,7 @@ int main()
 				else if (zaddr<MNT_REG_BASE+0x8000) {
 					// disable INT6 interrupt
 					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|0);
-
-					ptr = (u8*)(RX_FRAME_ADDRESS+RX_FRAME_PAD+zaddr-(MNT_REG_BASE+0x2000));
-					//if (zaddr>0x2010) {
-					//	printf("ERXF read: %08lx / %08lx\n",zaddr,(u32)ptr);
-					//}
+					ptr = (u8*)(ethernet_current_receive_ptr()+zaddr-(MNT_REG_BASE+0x2000));
 				}
 				else if (zaddr<MNT_REG_BASE+0x10000) {
 					ptr = (u8*)(TX_FRAME_ADDRESS+zaddr-(MNT_REG_BASE+0x8000));
@@ -1447,14 +1422,10 @@ int main()
 			}
 
 			if (videocap_enabled_old != videocap_enabled) {
-
-				printf("VCAP new state: %d\n", videocap_enabled);
-
 				if (framebuffer_pan_offset>=0xe00000) {
 					// clear videocap area
 					fb_fill(framebuffer_pan_offset/4);
 				}
-
 				videocap_enabled_old = videocap_enabled;
 			}
 
@@ -1484,14 +1455,17 @@ int main()
         }
 
 		// check for ethernet frames
-		uint32_t frms = get_frames_received();
-		if (frms!=old_frames_received) {
+		int backlog = ethernet_get_backlog();
+		if ((backlog>0 && backlog_nag_counter>5000)) {
 			// interrupt amiga (trigger int6/2)
-			//printf("ETHR INT6 %d (%d)\n",intrs++,frms);
 			mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|1);
     		usleep(1);
     		mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|0);
-			old_frames_received	= frms;
+			backlog_nag_counter = 0;
+		}
+
+		if (backlog>0) {
+			backlog_nag_counter++;
 		}
     }
 

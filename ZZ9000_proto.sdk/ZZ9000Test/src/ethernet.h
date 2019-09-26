@@ -23,14 +23,19 @@ void ethernet_receive_frame();
 u32 get_frames_received();
 uint8_t* ethernet_get_mac_address_ptr();
 void ethernet_update_mac_address();
+uint8_t* ethernet_current_receive_ptr();
+int ethernet_get_backlog();
 
 // FIXME allocate this memory properly
 
-#define RX_BD_LIST_START_ADDRESS	0x02110000
-#define TX_BD_LIST_START_ADDRESS	0x02180000
-#define RX_FRAME_ADDRESS 0x02100000
-#define TX_FRAME_ADDRESS 0x02108000
-#define RX_FRAME_PAD (-4)
+#define RX_BD_LIST_START_ADDRESS	0x02108000
+#define TX_BD_LIST_START_ADDRESS	0x02100000
+#define RX_FRAME_ADDRESS            0x02120000
+#define RX_BACKLOG_ADDRESS          0x02200000
+#define TX_FRAME_ADDRESS            0x02110000
+#define RX_FRAME_PAD 4
+
+#define FRAME_MAX_BACKLOG 32
 
 #define RXBD_CNT       1	/* Number of RxBDs to use */
 #define TXBD_CNT       2	/* Number of TxBDs to use */

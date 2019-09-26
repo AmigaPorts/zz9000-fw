@@ -52,6 +52,12 @@ uint8_t EmacPsMAC[6] = {0x68,0x82,0xf2,0x00,0x01,0x00};
 static volatile s32 DeviceErrors = 0;
 static volatile u32 FramesTx = 0;
 static volatile u32 FramesRx = 0;
+static volatile u16 frame_serial = 0;
+static volatile u32 frames_received = 0;
+static volatile u16 frames_backlog = 0;
+int frames_received_from_backlog = 0;
+
+#define FRAME_SIZE 2048
 
 typedef char EthernetFrame[XEMACPS_MAX_VLAN_FRAME_SIZE_JUMBO] __attribute__ ((aligned(64)));
 
@@ -164,13 +170,16 @@ int init_ethernet_buffers() {
 
 	Status = XEmacPs_BdRingAlloc(&
 				      (XEmacPs_GetRxRing(EmacPsInstancePtr)),
-				      1, &BdRxPtr);
+				      RXBD_CNT, &BdRxPtr);
 	if (Status != XST_SUCCESS) {
-		printf("EMAC: Error allocating RxBD\n");
+		printf("EMAC: Error allocating RxBDs\n");
 		return XST_FAILURE;
 	}
-	XEmacPs_BdSetAddressRx(BdRxPtr, RxFrame);
-	Status = XEmacPs_BdRingToHw(&(XEmacPs_GetRxRing(EmacPsInstancePtr)), 1, BdRxPtr);
+	for (int i=0; i<RXBD_CNT; i++) {
+		XEmacPs_BdSetAddressRx(BdRxPtr, RxFrame + FRAME_SIZE*i);
+		BdRxPtr = XEmacPs_BdRingNext(&(XEmacPs_GetRxRing(EmacPsInstancePtr)), BdRxPtr);
+	}
+	Status = XEmacPs_BdRingToHw(&(XEmacPs_GetRxRing(EmacPsInstancePtr)), RXBD_CNT, BdRxPtr);
 	if (Status != XST_SUCCESS) {
 		printf("EMAC: Error committing RxBD to HW\n");
 		return XST_FAILURE;
@@ -191,6 +200,16 @@ int ethernet_init() {
 	long Status;
 	XEmacPs* EmacPsInstancePtr = &EmacPsInstance;
 	XScuGic* IntcInstancePtr = &IntcInstance;
+
+	frames_backlog = 0;
+	frames_received_from_backlog = 0;
+
+	DeviceErrors = 0;
+	FramesTx = 0;
+	FramesRx = 0;
+	frame_serial = 0;
+	frames_received = 0;
+	frames_backlog = 0;
 
 	Config = XEmacPs_LookupConfig(XPAR_XEMACPS_0_DEVICE_ID);
 	Status = XEmacPs_CfgInitialize(EmacPsInstancePtr, Config, Config->BaseAddress);
@@ -298,8 +317,44 @@ static void XEmacPsSendHandler(void *Callback)
 #define XEMACPS_BD_TO_INDEX(ringptr, bdptr)				\
 	(((u32)bdptr - (u32)(ringptr)->BaseBdAddr) / (ringptr)->Separation)
 
-static volatile u16 frame_serial = 0;
-static volatile u32 frames_received = 0;
+void ethernet_alloc_rx_frames() {
+	XEmacPs* EmacPsInstancePtr = &EmacPsInstance;
+
+	XEmacPs_BdRing* rxring = &(XEmacPs_GetRxRing(EmacPsInstancePtr));
+	XEmacPs_Bd* rxbd;
+
+    int free_bds = XEmacPs_BdRingGetFreeCnt(rxring);
+
+    for (int i=0; i<free_bds; i++) {
+
+		int Status = XEmacPs_BdRingAlloc(rxring, 1, &rxbd);
+		if (Status != XST_SUCCESS) {
+			printf("EMAC: Error allocating RxBD\n");
+		} else {
+
+            int bd_index=XEMACPS_BD_TO_INDEX(rxring, rxbd);
+			XEmacPs_BdClearRxNew(rxbd);
+			XEmacPs_BdSetAddressRx(rxbd, RxFrame+bd_index*FRAME_SIZE); // FIXME redundant?
+
+			/*if (bd_index == RXBD_CNT-1) {
+				XEmacPs_BdSetRxWrap();
+			}*/
+
+			Status = XEmacPs_BdRingToHw(rxring, 1, rxbd);
+			if (Status != XST_SUCCESS) {
+				printf("EMAC: Error committing RxBD to HW\n");
+
+				XEmacPs_BdRingUnAlloc(rxring, 1, rxbd); // FIXME double check
+			}
+		}
+    }
+
+    if (!free_bds) {
+    	printf("EMAC: no BDs free for allocation\n");
+    }
+}
+
+int frame_receive_lock = 0;
 
 static void XEmacPsRecvHandler(void *Callback)
 {
@@ -308,9 +363,9 @@ static void XEmacPsRecvHandler(void *Callback)
 	XEmacPs_BdRing* rxring = &(XEmacPs_GetRxRing(EmacPsInstancePtr));
 	XEmacPs_Bd* rxbdset, *cur_bd_ptr;
 
-	int num_rx_bufs = XEmacPs_BdRingFromHwRx(rxring, 1, &rxbdset);
+	int num_rx_bufs = XEmacPs_BdRingFromHwRx(rxring, RXBD_CNT, &rxbdset);
 
-	// we immediately process the incoming frame
+	// we immediately process the incoming frame.
 	// main task will then signal the Amiga via interrupt
 	// driver on Amiga side will call ethernet_receive_frame after copying the frame
 	// and this will free up the EmacPS receive buffer again.
@@ -321,68 +376,94 @@ static void XEmacPsRecvHandler(void *Callback)
 		cur_bd_ptr = rxbdset;
 
 		for (int i=0; i<num_rx_bufs; i++) {
+
 			frame_serial++;
 
 			//printf("RX ser: %d\n",frame_serial);
 
-			//u32 bd_idx = XEMACPS_BD_TO_INDEX(rxring, cur_bd_ptr);
+			u32 bd_idx = XEMACPS_BD_TO_INDEX(rxring, cur_bd_ptr);
 			int rx_bytes = XEmacPs_BdGetLength(cur_bd_ptr);
+
+			uint8_t* frame_ptr = (uint8_t*)(RxFrame + bd_idx*FRAME_SIZE);
 
 			//printf("EMAC: RX: %d [%d] bd_idx: %d\n", frame_serial, rx_bytes, bd_idx);
 
-			Xil_DCacheInvalidateRange((UINTPTR)RxFrame, sizeof(EthernetFrame));
+			Xil_DCacheInvalidateRange((UINTPTR)frame_ptr, FRAME_SIZE);
 
 			// store size in big endian
-			*(RxFrame+RX_FRAME_PAD)   = (rx_bytes&0xff00)>>8;
-			*(RxFrame+RX_FRAME_PAD+1) = (rx_bytes&0xff);
-			*(RxFrame+RX_FRAME_PAD+2) = (frame_serial&0xff00)>>8;
-			*(RxFrame+RX_FRAME_PAD+3) = (frame_serial&0xff);
-			/*for (int i=0; i<rx_bytes; i++) {
-				int y = i;
-				printf("%02x",RxFrame[y]);
+			/*for (int j=0; j<rx_bytes; j++) {
+				int y = j;
+				printf("%02x",frame_ptr[y]);
 				if (y%4==3) printf(" ");
 				if (y%32==31) printf("\n");
 			}
 			printf("\n==========================================\n");*/
 
+			if (frames_backlog<FRAME_MAX_BACKLOG) {
+				// copy the frame to the backlog (frames that amiga hasn't fetched yet)
+				uint8_t* frame_bl_ptr = (uint8_t*)(RX_BACKLOG_ADDRESS+frames_backlog*FRAME_SIZE);
+				memcpy(frame_bl_ptr+RX_FRAME_PAD, frame_ptr, rx_bytes);
+
+				*(frame_bl_ptr)   = (rx_bytes&0xff00)>>8;
+				*(frame_bl_ptr+1) = (rx_bytes&0xff);
+				*(frame_bl_ptr+2) = (frame_serial&0xff00)>>8;
+				*(frame_bl_ptr+3) = (frame_serial&0xff);
+
+				frames_backlog++;
+
+				//printf("bd %d [%d] copied from %p to %p\n", bd_idx, rx_bytes, frame_ptr, frame_bl_ptr);
+			} else {
+				printf("EMAC: frames_backlog full\n");
+			}
+
+			XEmacPs_BdClearRxNew(cur_bd_ptr);
 			cur_bd_ptr = XEmacPs_BdRingNext(rxring, cur_bd_ptr);
+
+			frames_received++;
 		}
 
-		int Status = XEmacPs_BdRingFree(rxring, 1, rxbdset);
+		int Status = XEmacPs_BdRingFree(rxring, num_rx_bufs, rxbdset);
 		if (Status != XST_SUCCESS) {
 			printf("EMAC: Error freeing RxBDs\n");
+		} else {
+			//printf("EMAC: freed %d RxBDs\n", num_rx_bufs);
 		}
+
+		ethernet_alloc_rx_frames();
+
+		//printf("EMAC: backlog %d fetched %d\n", frames_backlog, frames_received_from_backlog);
 	}
 
-	frames_received++;
+	u32 status = XEmacPs_ReadReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET);
+	XEmacPs_WriteReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET, status);
+}
+
+uint8_t* ethernet_current_receive_ptr() {
+	return (uint8_t*)(RX_BACKLOG_ADDRESS+frames_received_from_backlog*FRAME_SIZE);
+}
+
+int ethernet_get_backlog() {
+	return frames_backlog;
 }
 
 void ethernet_receive_frame() {
-	XEmacPs* EmacPsInstancePtr = &EmacPsInstance;
+	// TODO disable interrupts while here
 
-	XEmacPs_BdRing* rxring = &(XEmacPs_GetRxRing(EmacPsInstancePtr));
-	XEmacPs_Bd* rxbdset;
+	uint8_t* frm = ethernet_current_receive_ptr();
+	//printf("ethernet_receive_frame: %d bytes: %d serial: %d\n", frames_received_from_backlog, frm[0]<<8|frm[1], frm[2]<<8|frm[3]);
 
-	//printf("amiga fetch ser: %d\n",frame_serial);
+	if (frames_backlog>0) {
+		frames_received_from_backlog++;
+		if (frames_received_from_backlog >= frames_backlog) {
+			// start over
+			frames_backlog = 0;
+			frames_received_from_backlog = 0;
 
-	int Status = XEmacPs_BdRingAlloc(rxring, 1, &rxbdset);
-	if (Status != XST_SUCCESS) {
-		// this happens if amiga fetches the frame before it is freed
-		//printf("EMAC: Error allocating RxBD\n");
-	} else {
-		XEmacPs_BdSetAddressRx(rxbdset, RxFrame); // FIXME redundant?
-		XEmacPs_BdClearRxNew(rxbdset);
-
-		//XEmacPs_BdSetStatus(rxbdset, XEMACPS_RXBUF_WRAP_MASK);
-		Status = XEmacPs_BdRingToHw(rxring, 1, rxbdset);
-		if (Status != XST_SUCCESS) {
-			printf("EMAC: Error committing RxBD to HW\n");
+			//printf("EMAC: caught up with backlog\n");
 		}
-
-		u32 status = XEmacPs_ReadReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET);
-		XEmacPs_WriteReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET, status);
+	} else {
+		printf("EMAC: ethernet_receive_frame() called but backlog is empty\n");
 	}
-
 }
 
 u32 get_frames_received() {
@@ -426,12 +507,13 @@ static void XEmacPsErrorHandler(void *Callback, u8 Direction, u32 ErrorWord)
 			printf("EMAC: Receive over run\n");
 		}
 		if (ErrorWord & XEMACPS_RXSR_BUFFNA_MASK) {
-			//printf("EMAC: Receive buffer not available\n");
+			printf("EMAC: Receive buffer not available\n");
 			// signal to host that frames are available
 			frames_dropped++;
 			frames_received++;
-			if (frames_dropped%100 == 0) {
+			if (frames_dropped%10 == 0) {
 				printf("ETHDROP: %d\n",frames_dropped);
+				ethernet_alloc_rx_frames();
 			}
 		}
 		break;
