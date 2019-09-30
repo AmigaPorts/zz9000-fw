@@ -476,12 +476,12 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 #define MNT_REG_BASE    			0x000000
 #define MNT_FB_BASE     			0x010000
 #define MNT_BASE_MODE   			MNT_REG_BASE+0x02
-#define MNT_BASE_VDIV   			MNT_REG_BASE+0x04
-#define MNT_BASE_HSIZE 				MNT_REG_BASE+0x04
-#define MNT_BASE_VSIZE 				MNT_REG_BASE+0x06
+#define MNT_BASE_CONFIG   			MNT_REG_BASE+0x04
+#define MNT_BASE_HSIZE 				MNT_REG_BASE+0x06
+#define MNT_BASE_VSIZE 				MNT_REG_BASE+0x08
 #define MNT_BASE_PAN_HI 			MNT_REG_BASE+0x0a
 #define MNT_BASE_PAN_LO 			MNT_REG_BASE+0x0c
-#define MNT_BASE_HDIV   			MNT_REG_BASE+0x0e
+#define MNT_BASE_UNUSED   			MNT_REG_BASE+0x0e
 #define MNT_BASE_RECTOP 			MNT_REG_BASE+0x10
 #define MNT_BASE_BLIT_SRC_HI 		MNT_REG_BASE+0x28
 #define MNT_BASE_BLIT_SRC_LO 		MNT_REG_BASE+0x2a
@@ -511,7 +511,7 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 #define MNT_BASE_FW_VERSION		MNT_REG_BASE+0xc0
 
 #define REVISION_MAJOR 1
-#define REVISION_MINOR 3
+#define REVISION_MINOR 4
 
 #define ZZVMODE_1280x720		0
 #define ZZVMODE_800x600			1
@@ -967,6 +967,7 @@ int main()
 	video_mode = 0x2200;
 
 	int backlog_nag_counter = 0;
+	int interrupt_enabled = 0;
 
     while(1) {
 		u32 zstate = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG3);
@@ -1121,7 +1122,6 @@ int main()
 				else if (zaddr==MNT_BASE_RECTOP+0x14) {
 					// copy rectangle
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
-
 					switch (zdata) {
 						case 1: // Regular BlitRect
 							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode, framebuffer, blitter_dst_pitch);
@@ -1132,7 +1132,7 @@ int main()
 						default:
 							break;
 					}
-					Xil_DCacheFlush();
+					//Xil_DCacheFlush();
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x16) {
 					// fill template
@@ -1202,8 +1202,9 @@ int main()
 				else if (zaddr==MNT_BASE_BLITTER_COLORMODE) {
 					blitter_colormode = zdata;
 				}
-				else if (zaddr==MNT_BASE_VDIV) {
-					// retired
+				else if (zaddr==MNT_BASE_CONFIG) {
+					// enable/disable INT6, currently used to signal incoming ethernet packets
+					interrupt_enabled = zdata&1;
 				}
 
 				else if (zaddr==MNT_BASE_MODE) {
@@ -1226,7 +1227,7 @@ int main()
 				else if (zaddr==MNT_BASE_VSIZE) {
 					// retired
 				}
-				else if (zaddr==MNT_BASE_HDIV) {
+				else if (zaddr==MNT_BASE_UNUSED) {
 					// retired
 				}
 				else if (zaddr==MNT_BASE_BLIT_SRC_PITCH) {
@@ -1494,9 +1495,9 @@ int main()
     		need_req_ack = 0;
         }
 
-		// check for ethernet frames
-		int backlog = ethernet_get_backlog();
-		if ((backlog>0 && backlog_nag_counter>5000)) {
+		// check for queued up ethernet frames
+		int ethernet_backlog = ethernet_get_backlog();
+		if (ethernet_backlog>0 && backlog_nag_counter>5000) {
 			// interrupt amiga (trigger int6/2)
 			mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1<<30)|1);
     		usleep(1);
@@ -1504,7 +1505,7 @@ int main()
 			backlog_nag_counter = 0;
 		}
 
-		if (backlog>0) {
+		if (interrupt_enabled && ethernet_backlog>0) {
 			backlog_nag_counter++;
 		}
     }
