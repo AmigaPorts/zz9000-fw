@@ -1178,6 +1178,12 @@ int main()
 					else
 						draw_line(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, rect_rgb, rect_rgb2, (blitter_colormode & 0x0F), zdata, draw_mode);
 				}
+				else if (zaddr == MNT_BASE_RECTOP + 0x2E) {
+					// InvertRect
+					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
+
+					invert_rect(rect_x1, rect_y1, rect_x2, rect_y2, zdata & 0xFF, blitter_colormode);
+				}
 				else if (zaddr==MNT_BASE_BLITTER_COLORMODE) {
 					blitter_colormode = zdata;
 				}

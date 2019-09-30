@@ -79,6 +79,21 @@ void fill_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t re
 	}
 }
 
+void invert_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint8_t mask, uint32_t color_format)
+{
+	uint32_t* dp = fb + (rect_y1 * fb_pitch);
+	uint16_t x;
+
+	for (uint16_t cur_y = rect_y1; cur_y <= rect_y2; cur_y++) {
+		x = rect_x1;
+		while (x <= rect_x2) {
+			INVERT_PIXEL;
+			x++;
+		}
+		dp += fb_pitch;
+	}
+}
+
 void fill_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb) {
 	for (uint16_t y=rect_y1; y<=rect_y2; y++) {
 		uint32_t* p=fb+y*fb_pitch;
