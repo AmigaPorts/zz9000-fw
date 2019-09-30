@@ -122,19 +122,20 @@ void fill_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t 
 	}
 }
 
-void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format)
+void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch)
 {
 	uint16_t w = rect_x2 - rect_x1 + 1, h = rect_y2 - rect_y1;
 	uint32_t* dp = fb + (rect_y1 * fb_pitch);
-	uint32_t* sp = fb + (rect_sy * fb_pitch);
+	uint32_t* sp = sp_src + (rect_sy * src_pitch);
 
-	int32_t line_step = fb_pitch;
+	int32_t line_step_d = fb_pitch, line_step_s = src_pitch;
 	int8_t x_reverse = 0;
 
 	if (rect_sy < rect_y1) {
-		line_step = -fb_pitch;
+		line_step_d = -fb_pitch;
 		dp = fb + (rect_y2 * fb_pitch);
-		sp = fb + ((rect_sy + h) * fb_pitch);
+		line_step_s = -src_pitch;
+		sp = sp_src + ((rect_sy + h) * src_pitch);
 	}
 
 	if (rect_sx < rect_x1) {
@@ -162,8 +163,8 @@ void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t re
 					memmove(dp + rect_x1, sp + rect_sx, w * 4);
 				break;
 		}
-		dp += line_step;
-		sp += line_step;
+		dp += line_step_d;
+		sp += line_step_s;
 	}
 }
 

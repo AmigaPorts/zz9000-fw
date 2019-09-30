@@ -1116,7 +1116,17 @@ int main()
 				else if (zaddr==MNT_BASE_RECTOP+0x14) {
 					// copy rectangle
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
-					copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode);
+
+					switch (zdata) {
+						case 1: // Regular BlitRect
+							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode, fb, fb_pitch);
+							break;
+						case 2: // BlitRectNoMaskComplete
+							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode, (uint32_t*)((u32)framebuffer+blitter_src_offset), blitter_src_pitch);
+							break;
+						default:
+							break;
+					}
 					Xil_DCacheFlush();
 				}
 				else if (zaddr==MNT_BASE_RECTOP+0x16) {
