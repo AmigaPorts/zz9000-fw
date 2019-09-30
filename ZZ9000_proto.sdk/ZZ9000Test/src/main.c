@@ -1086,6 +1086,12 @@ int main()
 
 				else if (zaddr==MNT_BASE_RECTOP+0xa) rect_x3=zdata;
 				else if (zaddr==MNT_BASE_RECTOP+0xc) rect_y3=zdata;
+
+				else if (zaddr == MNT_BASE_RECTOP + 0x30) blitter_user1 = zdata;
+				else if (zaddr == MNT_BASE_RECTOP + 0x32) blitter_user2 = zdata;
+				else if (zaddr == MNT_BASE_RECTOP + 0x34) blitter_user3 = zdata;
+				else if (zaddr == MNT_BASE_RECTOP + 0x36) blitter_user4 = zdata;
+
 				else if (zaddr==MNT_BASE_RECTOP+0xe) {
 					rect_rgb&=0xffff0000;
 					rect_rgb|=(((zdata&0xff)<<8)|zdata>>8);
