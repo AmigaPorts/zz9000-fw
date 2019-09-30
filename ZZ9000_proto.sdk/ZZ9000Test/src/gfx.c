@@ -395,6 +395,99 @@ void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t 
 	}
 }
 
+void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t h, uint16_t sh, uint8_t draw_mode, uint8_t planes, uint8_t mask, uint8_t layer_mask, uint16_t src_line_pitch, uint8_t *bmp_data_src)
+{
+	uint32_t *dp = fb + (dy * fb_pitch);
+
+	uint8_t cur_bit, base_bit, base_byte;
+	uint16_t cur_byte = 0, error_printed = 0;
+
+	uint16_t plane_size = src_line_pitch * sh;
+	uint8_t *bmp_data = bmp_data_src + ((sy % sh) * src_line_pitch);
+
+	cur_bit = base_bit = (0x80 >> (sx % 8));
+	cur_byte = base_byte = ((sx / 8) % src_line_pitch);
+
+	for (int16_t line_y = 0; line_y < h; line_y++) {
+		for (int16_t x = dx; x < dx + w; x++) {
+			switch (draw_mode) {
+				case 0x05: // Invert destination
+					((uint8_t *)dp)[x] ^= 0xFF;
+					break;
+				case 0x0C: // Replace destination with source
+					((uint8_t *)dp)[x] = 0x00;
+					switch (planes) {
+						case 8:
+							if (layer_mask & 0x80 && bmp_data[(plane_size * 7) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x80;
+						case 7:
+							if (layer_mask & 0x40 && bmp_data[(plane_size * 6) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x40;
+						case 6:
+							if (layer_mask & 0x20 && bmp_data[(plane_size * 5) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x20;
+						case 5:
+							if (layer_mask & 0x10 && bmp_data[(plane_size * 4) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x10;
+						case 4:
+							if (layer_mask & 0x08 && bmp_data[(plane_size * 3) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x08;
+						case 3:
+							if (layer_mask & 0x04 && bmp_data[(plane_size * 2) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x04;
+						case 2:
+							if (layer_mask & 0x02 && bmp_data[plane_size + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x02;
+						case 1:
+							if (layer_mask & 0x01 && bmp_data[cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x01;
+							break;
+					}
+					break;
+				case 0x03: // Replace destination with inverted source
+					((uint8_t *)dp)[x] = 0x00;
+					switch (planes) {
+						case 8:
+							if (layer_mask & 0x80 && (bmp_data[(plane_size * 7) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x80;
+						case 7:
+							if (layer_mask & 0x40 && (bmp_data[(plane_size * 6) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x40;
+						case 6:
+							if (layer_mask & 0x20 && (bmp_data[(plane_size * 5) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x20;
+						case 5:
+							if (layer_mask & 0x10 && (bmp_data[(plane_size * 4) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x10;
+						case 4:
+							if (layer_mask & 0x08 && (bmp_data[(plane_size * 3) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x08;
+						case 3:
+							if (layer_mask & 0x04 && (bmp_data[(plane_size * 2) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x04;
+						case 2:
+							if (layer_mask & 0x02 && (bmp_data[plane_size + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x02;
+						case 1:
+							if (layer_mask & 0x01 && (bmp_data[cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x01;
+							break;
+					}
+					break;
+				default:
+					// TODO: Not all minterm modes are handled yet.
+					// Unhandled minterm draw mode. Pixels will be filled with a horribly ugly
+					// brown color to indicate that there's an issue. Also print an error over
+					// UART for easier debugging.
+					((uint8_t *)dp)[x] = draw_mode << 8;
+					if (!error_printed) {
+						printf ("p2c_rect: Unhandled draw mode %.2X.\n", draw_mode);
+						error_printed = 1;
+					}
+					break;
+			}
+
+			if ((cur_bit >>= 1) == 0) {
+				cur_bit = 0x80;
+				cur_byte++;
+				cur_byte %= src_line_pitch;
+			}
+
+		}
+		dp += fb_pitch;
+		if ((line_y + sy + 1) % sh)
+			bmp_data += src_line_pitch;
+		else
+			bmp_data = bmp_data_src;
+		cur_bit = base_bit;
+		cur_byte = base_byte;
+	}
+}
+
 // inspired by UAE code. needs cleanup / optimization
 
 #define PATTERN_FILLRECT_LOOPX \

@@ -1152,6 +1152,19 @@ int main()
 
 					pattern_fill_rect((blitter_colormode & 0x0F), rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
 				}
+				else if (zaddr == MNT_BASE_RECTOP + 0x28) {
+					// Rect P2C
+					uint8_t draw_mode = blitter_colormode >> 8;
+					uint8_t planes = (zdata & 0xFF00) >> 8;
+					uint8_t mask = (zdata & 0xFF);
+					uint16_t num_rows = blitter_user1;
+					uint8_t layer_mask = blitter_user2;
+					uint8_t* bmp_data = (uint8_t*)((u32)framebuffer + blitter_src_offset);
+
+					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
+
+					p2c_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, num_rows, draw_mode, planes, mask, layer_mask, blitter_src_pitch, bmp_data);
+				}
 				else if (zaddr == MNT_BASE_RECTOP + 0x2a) {
 					// DrawLine
 					uint8_t draw_mode = blitter_colormode >> 8;
