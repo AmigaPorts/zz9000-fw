@@ -1066,278 +1066,296 @@ int main()
 				}
 				//printf("CONV: %08lx <- %08lx\n",zaddr,zdata);
 
-				// PANNING
-				if (zaddr==MNT_BASE_PAN_HI) framebuffer_pan_offset=zdata<<16;
-				else if (zaddr==MNT_BASE_PAN_LO) {
-					framebuffer_pan_offset|=zdata;
+				switch (zaddr) {
+					// Various blitter/video registers
+					case MNT_BASE_PAN_HI:
+						framebuffer_pan_offset = zdata << 16; break;
+					case MNT_BASE_PAN_LO:
+						framebuffer_pan_offset |= zdata;
 
-					if (framebuffer_pan_offset != framebuffer_pan_offset_old) {
-						init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
-						video_formatter_valign();
-						framebuffer_pan_offset_old = framebuffer_pan_offset;
-					}
-				}
-				else if (zaddr==MNT_BASE_BLIT_SRC_HI) blitter_src_offset=zdata<<16;
-				else if (zaddr==MNT_BASE_BLIT_SRC_LO) blitter_src_offset|=zdata;
-				else if (zaddr==MNT_BASE_BLIT_DST_HI) blitter_dst_offset=zdata<<16;
-				else if (zaddr==MNT_BASE_BLIT_DST_LO) blitter_dst_offset|=zdata;
+						if (framebuffer_pan_offset != framebuffer_pan_offset_old) {
+							init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
+							video_formatter_valign();
+							framebuffer_pan_offset_old = framebuffer_pan_offset;
+						}
+						break;
+					
+					case MNT_BASE_BLIT_SRC_HI:
+						blitter_src_offset = zdata << 16; break;
+					case MNT_BASE_BLIT_SRC_LO:
+						blitter_src_offset |= zdata; break;
+					case MNT_BASE_BLIT_DST_HI:
+						blitter_dst_offset = zdata << 16; break;
+					case MNT_BASE_BLIT_DST_LO:
+						blitter_dst_offset |= zdata; break;
 
-				// RECTOP
-				// FIXME refactor these magic numbers / constants
-				else if (zaddr==MNT_BASE_RECTOP)   rect_x1=zdata;
-				else if (zaddr==MNT_BASE_RECTOP+2) rect_y1=zdata;
-				else if (zaddr==MNT_BASE_RECTOP+4) rect_x2=zdata;
-				else if (zaddr==MNT_BASE_RECTOP+6) rect_y2=zdata;
-				else if (zaddr==MNT_BASE_RECTOP+8) blitter_dst_pitch=zdata;
+					case MNT_BASE_BLITTER_COLORMODE:
+						blitter_colormode = zdata; break;
+                	case MNT_BASE_CONFIG:
+                    	// enable/disable INT6, currently used to signal incoming ethernet packets
+                    	interrupt_enabled = zdata & 1;
+						break;
+					case MNT_BASE_MODE:
+						printf("mode change: %x\n",zdata);
 
-				else if (zaddr==MNT_BASE_RECTOP+0xa) rect_x3=zdata;
-				else if (zaddr==MNT_BASE_RECTOP+0xc) rect_y3=zdata;
+						if (video_mode != zdata) {
+							int mode = zdata&0xff;
+							int colormode = (zdata&0xf00)>>8;
+							int scalemode = (zdata&0xf000)>>12;
+							printf("mode: %d color: %d scale: %d\n",mode,colormode,scalemode);
 
-				else if (zaddr == MNT_BASE_RECTOP + 0x30) blitter_user1 = zdata;
-				else if (zaddr == MNT_BASE_RECTOP + 0x32) blitter_user2 = zdata;
-				else if (zaddr == MNT_BASE_RECTOP + 0x34) blitter_user3 = zdata;
-				else if (zaddr == MNT_BASE_RECTOP + 0x36) blitter_user4 = zdata;
+							video_mode_init(mode, scalemode, colormode);
+						}
+						// remember selected video mode
+						video_mode = zdata;
+						break;
+					case MNT_BASE_HSIZE:
+						/* retired */ break;
+					case MNT_BASE_VSIZE:
+						/* retired */ break;
+					case MNT_BASE_BLIT_SRC_PITCH:
+						blitter_src_pitch = zdata; break;
 
-				else if (zaddr==MNT_BASE_RECTOP+0xe) {
-					rect_rgb&=0xffff0000;
-					rect_rgb|=(((zdata&0xff)<<8)|zdata>>8);
-				}
-				else if (zaddr==MNT_BASE_RECTOP+0x10) {
-					rect_rgb&=0x0000ffff;
-					rect_rgb|=(((zdata&0xff)<<8)|zdata>>8)<<16;
-				}
-				else if (zaddr==MNT_BASE_RECTOP+0x24) {
-					rect_rgb2&=0xffff0000;
-					rect_rgb2|=(((zdata&0xff)<<8)|zdata>>8);
-				}
-				else if (zaddr==MNT_BASE_RECTOP+0x26) {
-					rect_rgb2&=0x0000ffff;
-					rect_rgb2|=(((zdata&0xff)<<8)|zdata>>8)<<16;
-				}
-				else if (zaddr==MNT_BASE_RECTOP+0x12) {
-					// fill rectangle
-					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
-					fill_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_rgb, blitter_colormode);
-				}
-				else if (zaddr==MNT_BASE_RECTOP+0x14) {
-					// copy rectangle
-					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
-					switch (zdata) {
-						case 1: // Regular BlitRect
-							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode, (uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
+					case MNT_BASE_RECTOP:
+						rect_x1=zdata; break;
+					case MNT_BASE_RECTOP + 2:
+						rect_y1=zdata; break;
+					case MNT_BASE_RECTOP + 4:
+						rect_x2=zdata; break;
+					case MNT_BASE_RECTOP + 6:
+						rect_y2=zdata; break;
+					case MNT_BASE_RECTOP + 8:
+						blitter_dst_pitch = zdata; break;
+					case MNT_BASE_RECTOP + 0xa:
+						rect_x3=zdata; break;
+					case MNT_BASE_RECTOP + 0xc:
+						rect_y3=zdata; break;
+
+					case MNT_BASE_RECTOP + 0x30:
+						blitter_user1 = zdata; break;
+					case MNT_BASE_RECTOP + 0x32:
+						blitter_user2 = zdata; break;
+					case MNT_BASE_RECTOP + 0x34:
+						blitter_user3 = zdata; break;
+					case MNT_BASE_RECTOP + 0x36:
+						blitter_user4 = zdata; break;
+
+					case MNT_BASE_RECTOP + 0xe:
+						rect_rgb &= 0xffff0000;
+						rect_rgb |= (((zdata & 0xff) << 8) | zdata >> 8);
+						break;
+					case MNT_BASE_RECTOP + 0x10:
+						rect_rgb &= 0x0000ffff;
+						rect_rgb |= (((zdata & 0xff) << 8) | zdata >> 8) << 16;
+						break;
+					case MNT_BASE_RECTOP + 0x24:
+						rect_rgb2 &= 0xffff0000;
+						rect_rgb2 |= (((zdata & 0xff) << 8) | zdata >> 8);
+						break;
+					case MNT_BASE_RECTOP + 0x26:
+						rect_rgb2 &= 0x0000ffff;
+						rect_rgb2 |= (((zdata & 0xff) << 8) | zdata >> 8) << 16;
+						break;
+
+					// RTG rendering
+					case MNT_BASE_RECTOP + 0x12:
+						// fill rectangle
+						set_fb ((uint32_t*)((u32)framebuffer + blitter_dst_offset), blitter_dst_pitch);
+						fill_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_rgb, blitter_colormode);
+						break;
+
+					case MNT_BASE_RECTOP + 0x14:
+						// copy rectangle
+						set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
+
+						switch (zdata) {
+							case 1: // Regular BlitRect
+								copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode, framebuffer, blitter_dst_pitch);
+								break;
+							case 2: // BlitRectNoMaskComplete
+								copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode, (uint32_t*)((u32)framebuffer+blitter_src_offset), blitter_src_pitch);
+								break;
+						}
+						//Xil_DCacheFlush();
+						break;
+
+					case MNT_BASE_RECTOP + 0x16: {
+							uint8_t draw_mode = blitter_colormode>>8;
+							uint8_t* tmpl_data = (uint8_t*)((u32)framebuffer+blitter_src_offset);
+							set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
+
+							uint8_t bpp = 2*(blitter_colormode&0xff);
+							if (bpp==0) bpp = 1;
+							uint16_t loop_rows = 0;
+
+							if (zdata&0x8000) {
+								// pattern mode
+								// TODO yoffset
+								loop_rows = zdata&0xff;
+							}
+
+							if (loop_rows>0) {
+								/*printf("fill_template:\n====================\n");
+								printf("bpp: %d\n", bpp);
+								printf("loop_rows: %d\n", loop_rows);
+								printf("x:y1 - x:y2 %d:%d - %d:%d\n", rect_x1, rect_y1, rect_x2, rect_y2);
+								printf("draw_mode: %d\n", draw_mode);
+								printf("rect_rgb: %lx\n", rect_rgb);
+								printf("rect_rgb2: %lx\n", rect_rgb2);
+								printf("rect_x3: %d\n", rect_x3);
+								printf("rect_y3: %d\n", rect_y3);
+								printf("tmpl_data: %p\n", tmpl_data);
+								printf("blitter_src_pitch: %d\n\n", blitter_src_pitch);*/
+							}
+
+							pattern_fill_rect((blitter_colormode & 0x0F), rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
 							break;
-						case 2: // BlitRectNoMaskComplete
-							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode, (uint32_t*)((u32)framebuffer+blitter_src_offset), blitter_src_pitch);
-							break;
-						default:
-							break;
-					}
-					//Xil_DCacheFlush();
-				}
-				else if (zaddr==MNT_BASE_RECTOP+0x16) {
-					// fill template
+						}
+					
 
-					uint8_t draw_mode = blitter_colormode>>8;
-					uint8_t* tmpl_data = (uint8_t*)((u32)framebuffer+blitter_src_offset);
-					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
+					case MNT_BASE_RECTOP + 0x28: {
+						// Rect P2C
+						uint8_t draw_mode = blitter_colormode >> 8;
+						uint8_t planes = (zdata & 0xFF00) >> 8;
+						uint8_t mask = (zdata & 0xFF);
+						uint16_t num_rows = blitter_user1;
+						uint8_t layer_mask = blitter_user2;
+						uint8_t* bmp_data = (uint8_t*)((u32)framebuffer + blitter_src_offset);
 
-					uint8_t bpp = 2*(blitter_colormode&0xff);
-					if (bpp==0) bpp = 1;
-					uint16_t loop_rows = 0;
+						set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
 
-					if (zdata&0x8000) {
-						// pattern mode
-						// TODO yoffset
-						loop_rows = zdata&0xff;
+						p2c_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, num_rows, draw_mode, planes, mask, layer_mask, blitter_src_pitch, bmp_data);
+						break;
 					}
 
-					if (loop_rows>0) {
-						/*printf("fill_template:\n====================\n");
-						printf("bpp: %d\n", bpp);
-						printf("loop_rows: %d\n", loop_rows);
-						printf("x:y1 - x:y2 %d:%d - %d:%d\n", rect_x1, rect_y1, rect_x2, rect_y2);
-						printf("draw_mode: %d\n", draw_mode);
-						printf("rect_rgb: %lx\n", rect_rgb);
-						printf("rect_rgb2: %lx\n", rect_rgb2);
-						printf("rect_x3: %d\n", rect_x3);
-						printf("rect_y3: %d\n", rect_y3);
-						printf("tmpl_data: %p\n", tmpl_data);
-						printf("blitter_src_pitch: %d\n\n", blitter_src_pitch);*/
+					case MNT_BASE_RECTOP + 0x2a: {
+						// DrawLine
+						uint8_t draw_mode = blitter_colormode >> 8;
+						set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset), blitter_dst_pitch);
+
+						// rect_x3 contains the pattern. if all bits are set for both the mask and the pattern,
+						// there's no point in passing non-essential data to the pattern/mask aware function.
+
+						if (rect_x3 == 0xFFFF && zdata == 0xFF)
+							draw_line_solid(rect_x1, rect_y1, rect_x2, rect_y2, rect_rgb, (blitter_colormode & 0x0F));
+						else
+							draw_line(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, rect_rgb, rect_rgb2, (blitter_colormode & 0x0F), zdata, draw_mode);
+						break;
 					}
 
-					pattern_fill_rect((blitter_colormode & 0x0F), rect_x1, rect_y1, rect_x2, rect_y2, draw_mode, 0xff, rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data, blitter_src_pitch, loop_rows);
-				}
-				else if (zaddr == MNT_BASE_RECTOP + 0x28) {
-					// Rect P2C
-					uint8_t draw_mode = blitter_colormode >> 8;
-					uint8_t planes = (zdata & 0xFF00) >> 8;
-					uint8_t mask = (zdata & 0xFF);
-					uint16_t num_rows = blitter_user1;
-					uint8_t layer_mask = blitter_user2;
-					uint8_t* bmp_data = (uint8_t*)((u32)framebuffer + blitter_src_offset);
+					case MNT_BASE_RECTOP + 0x2e:
+						// InvertRect
+						set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
 
-					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
+						invert_rect(rect_x1, rect_y1, rect_x2, rect_y2, zdata & 0xFF, blitter_colormode);
+						break;
 
-					p2c_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, num_rows, draw_mode, planes, mask, layer_mask, blitter_src_pitch, bmp_data);
-				}
-				else if (zaddr == MNT_BASE_RECTOP + 0x2a) {
-					// DrawLine
-					uint8_t draw_mode = blitter_colormode >> 8;
-					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset), blitter_dst_pitch);
-
-					// rect_x3 contains the pattern. if all bits are set for both the mask and the pattern,
-					// there's no point in passing non-essential data to the pattern/mask aware function.
-
-					if (rect_x3 == 0xFFFF && zdata == 0xFF)
-						draw_line_solid(rect_x1, rect_y1, rect_x2, rect_y2, blitter_user1, rect_rgb, (blitter_colormode & 0x0F));
-					else
-						draw_line(rect_x1, rect_y1, rect_x2, rect_y2, blitter_user1, rect_x3, rect_y3, rect_rgb, rect_rgb2, (blitter_colormode & 0x0F), zdata, draw_mode);
-				}
-				else if (zaddr == MNT_BASE_RECTOP + 0x2E) {
-					// InvertRect
-					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
-
-					invert_rect(rect_x1, rect_y1, rect_x2, rect_y2, zdata & 0xFF, blitter_colormode);
-				}
-				else if (zaddr==MNT_BASE_BLITTER_COLORMODE) {
-					blitter_colormode = zdata;
-				}
-				else if (zaddr==MNT_BASE_CONFIG) {
-					// enable/disable INT6, currently used to signal incoming ethernet packets
-					interrupt_enabled = zdata&1;
-				}
-
-				else if (zaddr==MNT_BASE_MODE) {
-					printf("mode change: %x\n",zdata);
-
-					if (video_mode != zdata) {
-						int mode = zdata&0xff;
-						int colormode = (zdata&0xf00)>>8;
-						int scalemode = (zdata&0xf000)>>12;
-						printf("mode: %d color: %d scale: %d\n",mode,colormode,scalemode);
-
-						video_mode_init(mode, scalemode, colormode);
-					}
-					// remember selected video mode
-					video_mode = zdata;
-				}
-				else if (zaddr==MNT_BASE_HSIZE) {
-					// retired
-				}
-				else if (zaddr==MNT_BASE_VSIZE) {
-					// retired
-				}
-				else if (zaddr==MNT_BASE_UNUSED) {
-					// retired
-				}
-				else if (zaddr==MNT_BASE_BLIT_SRC_PITCH) {
-					blitter_src_pitch = zdata;
-				}
-				else if (zaddr==MNT_BASE_ETH_TX) {
-					Xil_DCacheFlush();
-					ethernet_send_result = ethernet_send_frame(zdata);
-					//printf("SEND frame sz: %ld res: %d\n",zdata,ethernet_send_result);
-				}
-				else if (zaddr==MNT_BASE_ETH_RX) {
-					//printf("RECV eth frame sz: %ld\n",zdata);
-					ethernet_receive_frame();
-				}
-				else if (zaddr==MNT_BASE_ETH_MAC_HI) {
-					uint8_t* mac = ethernet_get_mac_address_ptr();
-					mac[0] = (zdata&0xff00)>>8;
-					mac[1] = (zdata&0x00ff);
-				}
-				else if (zaddr==MNT_BASE_ETH_MAC_HI2) {
-					uint8_t* mac = ethernet_get_mac_address_ptr();
-					mac[2] = (zdata&0xff00)>>8;
-					mac[3] = (zdata&0x00ff);
-				}
-				else if (zaddr==MNT_BASE_ETH_MAC_LO) {
-					uint8_t* mac = ethernet_get_mac_address_ptr();
-					mac[4] = (zdata&0xff00)>>8;
-					mac[5] = (zdata&0x00ff);
-					ethernet_update_mac_address();
-				}
-				else if (zaddr==MNT_BASE_RUN_HI) {
-					arm_run_address=((u32)zdata)<<16;
-				}
-				else if (zaddr==MNT_BASE_RUN_LO) {
-					// TODO checksum?
-					arm_run_address|=zdata;
-
-					*core1_addr  = (uint32_t)core1_loop;
-					core1_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
-					core1_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
-
-					printf("[ARM_RUN] %lx\n",arm_run_address);
-					if (arm_run_address>0) {
-						core1_trampoline = (volatile void (*)(volatile struct ZZ9K_ENV*))arm_run_address;
-						printf("[ARM_RUN] signaling second core.\n");
+					// Ethernet
+					case MNT_BASE_ETH_TX:
 						Xil_DCacheFlush();
-						Xil_ICacheInvalidate();
-						core2_execute = 1;
-						Xil_DCacheFlush();
-						Xil_ICacheInvalidate();
-					} else {
-						core1_trampoline = 0;
-						core2_execute = 0;
+						ethernet_send_result = ethernet_send_frame(zdata);
+						//printf("SEND frame sz: %ld res: %d\n",zdata,ethernet_send_result);
+						break;
+					case MNT_BASE_ETH_RX:
+						//printf("RECV eth frame sz: %ld\n",zdata);
+						ethernet_receive_frame();
+						break;
+					case MNT_BASE_ETH_MAC_HI: {
+						uint8_t* mac = ethernet_get_mac_address_ptr();
+						mac[0] = (zdata&0xff00)>>8;
+						mac[1] = (zdata&0x00ff);
+						break;
+					}
+					case MNT_BASE_ETH_MAC_HI2: {
+						uint8_t* mac = ethernet_get_mac_address_ptr();
+						mac[2] = (zdata&0xff00)>>8;
+						mac[3] = (zdata&0x00ff);
+						break;
+					}
+					case MNT_BASE_ETH_MAC_LO: {
+						uint8_t* mac = ethernet_get_mac_address_ptr();
+						mac[4] = (zdata&0xff00)>>8;
+						mac[5] = (zdata&0x00ff);
+						ethernet_update_mac_address();
+						break;
 					}
 
-					// FIXME move this out of here
-					// sequence to reset cpu1 taken from https://xilinx-wiki.atlassian.net/wiki/spaces/A/pages/18842504/XAPP1079+Latest+Information
+					// ARM core 2 execution
+					case MNT_BASE_RUN_HI:
+						arm_run_address = ((u32)zdata) << 16; break;
+					case MNT_BASE_RUN_LO:
+						// TODO checksum?
+						arm_run_address |= zdata;
 
-			    	Xil_Out32(XSLCR_UNLOCK_ADDR, XSLCR_UNLOCK_CODE);
-			    	uint32_t RegVal = Xil_In32(A9_CPU_RST_CTRL);
-			    	RegVal |= A9_RST1_MASK;
-			    	Xil_Out32(A9_CPU_RST_CTRL, RegVal);
-			    	RegVal |= A9_CLKSTOP1_MASK;
-			    	Xil_Out32(A9_CPU_RST_CTRL, RegVal);
-			    	RegVal &= ~A9_RST1_MASK;
-					Xil_Out32(A9_CPU_RST_CTRL, RegVal);
-			    	RegVal &= ~A9_CLKSTOP1_MASK;
-					Xil_Out32(A9_CPU_RST_CTRL, RegVal);
-			    	Xil_Out32(XSLCR_LOCK_ADDR, XSLCR_LOCK_CODE);
+						*core1_addr  = (uint32_t)core1_loop;
+						core1_addr2[0] = 0xe3e0000f; // mvn	r0, #15  -- loads 0xfffffff0
+						core1_addr2[1] = 0xe590f000; // ldr	pc, [r0] -- jumps to the address in that address
 
-					dmb();
-					dsb();
-					isb();
-					asm("sev");
-				}
-				else if (zaddr==MNT_BASE_RUN_ARGC) {
-					arm_run_env.argc = zdata;
-				}
-				else if (zaddr==MNT_BASE_RUN_ARG0) {
-					arm_run_env.argv[0] = ((u32)zdata)<<16;
-				}
-				else if (zaddr==MNT_BASE_RUN_ARG1) {
-					arm_run_env.argv[0] |= zdata;
-					printf("ARG0 set: %lx\n",arm_run_env.argv[0]);
-				}
-				else if (zaddr==MNT_BASE_RUN_ARG2) {
-					arm_run_env.argv[1] = ((u32)zdata)<<16;
-				}
-				else if (zaddr==MNT_BASE_RUN_ARG3) {
-					arm_run_env.argv[1] |= zdata;
-					printf("ARG1 set: %lx\n",arm_run_env.argv[1]);
-				}
-				else if (zaddr==MNT_BASE_RUN_ARG4) {
-					arm_run_env.argv[2] = ((u32)zdata)<<16;
-				}
-				else if (zaddr==MNT_BASE_RUN_ARG5) {
-					arm_run_env.argv[2] |= zdata;
-					printf("ARG2 set: %lx\n",arm_run_env.argv[2]);
-				}
-				else if (zaddr==MNT_BASE_RUN_ARG6) {
-					arm_run_env.argv[3] = ((u32)zdata)<<16;
-				}
-				else if (zaddr==MNT_BASE_RUN_ARG7) {
-					arm_run_env.argv[3] |= zdata;
-					printf("ARG3 set: %lx\n",arm_run_env.argv[3]);
-				}
-				else if (zaddr==MNT_BASE_EVENT_CODE) {
-					arm_app_input_event_code = zdata;
-					arm_app_input_event_serial++;
-					arm_app_input_event_ack = 0;
+						printf("[ARM_RUN] %lx\n", arm_run_address);
+						if (arm_run_address>0) {
+							core1_trampoline = (volatile void (*)(volatile struct ZZ9K_ENV*))arm_run_address;
+							printf("[ARM_RUN] signaling second core.\n");
+							Xil_DCacheFlush();
+							Xil_ICacheInvalidate();
+							core2_execute = 1;
+							Xil_DCacheFlush();
+							Xil_ICacheInvalidate();
+						} else {
+							core1_trampoline = 0;
+							core2_execute = 0;
+						}
+
+						// FIXME move this out of here
+						// sequence to reset cpu1 taken from https://xilinx-wiki.atlassian.net/wiki/spaces/A/pages/18842504/XAPP1079+Latest+Information
+
+						Xil_Out32(XSLCR_UNLOCK_ADDR, XSLCR_UNLOCK_CODE);
+						uint32_t RegVal = Xil_In32(A9_CPU_RST_CTRL);
+						RegVal |= A9_RST1_MASK;
+						Xil_Out32(A9_CPU_RST_CTRL, RegVal);
+						RegVal |= A9_CLKSTOP1_MASK;
+						Xil_Out32(A9_CPU_RST_CTRL, RegVal);
+						RegVal &= ~A9_RST1_MASK;
+						Xil_Out32(A9_CPU_RST_CTRL, RegVal);
+						RegVal &= ~A9_CLKSTOP1_MASK;
+						Xil_Out32(A9_CPU_RST_CTRL, RegVal);
+						Xil_Out32(XSLCR_LOCK_ADDR, XSLCR_LOCK_CODE);
+
+						dmb();
+						dsb();
+						isb();
+						asm("sev");
+						break;
+					case MNT_BASE_RUN_ARGC:
+						arm_run_env.argc = zdata; break;
+					case MNT_BASE_RUN_ARG0:
+						arm_run_env.argv[0] = ((u32)zdata) << 16;  break;
+					case MNT_BASE_RUN_ARG1:
+						arm_run_env.argv[0] |= zdata;
+						printf("ARG0 set: %lx\n", arm_run_env.argv[0]);
+						break;
+					case MNT_BASE_RUN_ARG2:
+						arm_run_env.argv[1] = ((u32)zdata) << 16; break;
+					case MNT_BASE_RUN_ARG3:
+						arm_run_env.argv[1] |= zdata;
+						printf("ARG1 set: %lx\n", arm_run_env.argv[1]);
+						break;
+					case MNT_BASE_RUN_ARG4:
+						arm_run_env.argv[2] = ((u32)zdata) << 16; break;
+					case MNT_BASE_RUN_ARG5:
+						arm_run_env.argv[2] |= zdata;
+						printf("ARG2 set: %lx\n", arm_run_env.argv[2]);
+						break;
+					case MNT_BASE_RUN_ARG6:
+						arm_run_env.argv[3] = ((u32)zdata) << 16; break;
+					case MNT_BASE_RUN_ARG7:
+						arm_run_env.argv[3] |= zdata;
+						printf("ARG3 set: %lx\n", arm_run_env.argv[3]);
+						break;
+					case MNT_BASE_EVENT_CODE:
+						arm_app_input_event_code = zdata;
+						arm_app_input_event_serial++;
+						arm_app_input_event_ack = 0;
+						break;
 				}
 			}
 
