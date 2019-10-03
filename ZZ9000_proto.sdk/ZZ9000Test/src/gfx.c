@@ -276,7 +276,7 @@ void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t r
 		cur_bit = 0x8000; \
 
 // Sneakily adapted version of the good old Bresenham algorithm
-void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2,
+void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2, uint16_t len,
 	uint16_t pattern, uint16_t pattern_offset,
 	uint32_t fg_color, uint32_t bg_color, uint32_t color_format,
 	uint8_t mask, uint8_t draw_mode)
@@ -332,7 +332,7 @@ void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y
 	DRAW_LINE_PIXEL;
 
 	if (dx_abs >= dy_abs) {
-		for (uint16_t i = 0; i < dx_abs; i++) {
+		for (uint16_t i = 0; i < len; i++) {
 			iy += dy_abs;
 			if (iy >= dx_abs) {
 				iy -= dx_abs;
@@ -344,7 +344,7 @@ void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y
 		}
 	}
 	else {
-		for(uint16_t i = 0; i < dy_abs; i++) {
+		for(uint16_t i = 0; i < len; i++) {
 			ix += dx_abs;
 			if (ix >= dy_abs) {
 				ix -= dy_abs;
@@ -357,7 +357,7 @@ void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y
 	}
 }
 
-void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2,
+void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2, uint16_t len,
 	uint32_t fg_color, uint32_t color_format)
 {
 	int16_t x1 = rect_x1, y1 = rect_y1;
@@ -386,7 +386,7 @@ void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t 
 	SET_FG_PIXEL;
 
 	if (dx_abs >= dy_abs) {
-		for (uint16_t i = 0; i < dx_abs; i++) {
+		for (uint16_t i = 0; i < len; i++) {
 			iy += dy_abs;
 			if (iy >= dx_abs) {
 				iy -= dx_abs;
@@ -398,7 +398,7 @@ void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t 
 		}
 	}
 	else {
-		for (uint16_t i = 0; i < dy_abs; i++) {
+		for (uint16_t i = 0; i < len; i++) {
 			ix += dx_abs;
 			if (ix >= dy_abs) {
 				ix -= dy_abs;
