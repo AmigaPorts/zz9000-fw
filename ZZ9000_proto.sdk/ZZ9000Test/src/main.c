@@ -1124,7 +1124,7 @@ int main()
 					set_fb((uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
 					switch (zdata) {
 						case 1: // Regular BlitRect
-							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode, framebuffer, blitter_dst_pitch);
+							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode, (uint32_t*)((u32)framebuffer+blitter_dst_offset), blitter_dst_pitch);
 							break;
 						case 2: // BlitRectNoMaskComplete
 							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, blitter_colormode, (uint32_t*)((u32)framebuffer+blitter_src_offset), blitter_src_pitch);
@@ -1189,9 +1189,9 @@ int main()
 					// there's no point in passing non-essential data to the pattern/mask aware function.
 
 					if (rect_x3 == 0xFFFF && zdata == 0xFF)
-						draw_line_solid(rect_x1, rect_y1, rect_x2, rect_y2, rect_rgb, (blitter_colormode & 0x0F));
+						draw_line_solid(rect_x1, rect_y1, rect_x2, rect_y2, blitter_user1, rect_rgb, (blitter_colormode & 0x0F));
 					else
-						draw_line(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3, rect_y3, rect_rgb, rect_rgb2, (blitter_colormode & 0x0F), zdata, draw_mode);
+						draw_line(rect_x1, rect_y1, rect_x2, rect_y2, blitter_user1, rect_x3, rect_y3, rect_rgb, rect_rgb2, (blitter_colormode & 0x0F), zdata, draw_mode);
 				}
 				else if (zaddr == MNT_BASE_RECTOP + 0x2E) {
 					// InvertRect
