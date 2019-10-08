@@ -477,8 +477,8 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz, int 
 #define MNT_FB_BASE     			0x010000
 #define MNT_BASE_MODE   			MNT_REG_BASE+0x02
 #define MNT_BASE_CONFIG   			MNT_REG_BASE+0x04
-#define MNT_BASE_HSIZE 				MNT_REG_BASE+0x06
-#define MNT_BASE_VSIZE 				MNT_REG_BASE+0x08
+#define MNT_BASE_SPRITEX			MNT_REG_BASE+0x06
+#define MNT_BASE_SPRITEY			MNT_REG_BASE+0x08
 #define MNT_BASE_PAN_HI 			MNT_REG_BASE+0x0a
 #define MNT_BASE_PAN_LO 			MNT_REG_BASE+0x0c
 #define MNT_BASE_UNUSED   			MNT_REG_BASE+0x0e
@@ -920,6 +920,9 @@ int main()
 	uint16_t blitter_user3 = 0;
 	uint16_t blitter_user4 = 0;
 
+	uint16_t sprite_x = 0;
+	uint16_t sprite_y = 0;
+
     // ARM app run environment
     arm_run_env.api_version = 1;
     arm_run_env.fn_putchar = _putchar;
@@ -1221,11 +1224,13 @@ int main()
 					// remember selected video mode
 					video_mode = zdata;
 				}
-				else if (zaddr==MNT_BASE_HSIZE) {
-					// retired
+				else if (zaddr==MNT_BASE_SPRITEX) {
+					sprite_x = zdata;
+					video_formatter_write((sprite_y<<16)|sprite_x,13);
 				}
-				else if (zaddr==MNT_BASE_VSIZE) {
-					// retired
+				else if (zaddr==MNT_BASE_SPRITEY) {
+					sprite_y = zdata;
+					video_formatter_write((sprite_y<<16)|sprite_x,13);
 				}
 				else if (zaddr==MNT_BASE_UNUSED) {
 					// retired
