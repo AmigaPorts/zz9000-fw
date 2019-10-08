@@ -1002,8 +1002,6 @@ module MNTZorro_v0_1_S00_AXI
                         VCAP_G7,VCAP_G6,VCAP_G5,VCAP_G4,VCAP_G3,VCAP_G2,VCAP_G1,VCAP_G0,
                         VCAP_B7,VCAP_B6,VCAP_B5,VCAP_B4,VCAP_B3,VCAP_B2,VCAP_B1,VCAP_B0};
     
-    //videocap_prex <= videocap_prex_in;
-    
     if (videocap_vs[6:1]=='b111000) begin
       if (videocap_ymax[0]!=videocap_ymax2[0])
         videocap_interlace <= 1;
@@ -1868,12 +1866,12 @@ module MNTZorro_v0_1_S00_AXI
     out_reg0 <= ZORRO3 ? last_z3addr : last_addr;
     out_reg1 <= zorro_ram_write_data;
     out_reg2 <= last_z3addr;
-    out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_ram_write_bytes, ZORRO3, 
-                video_control_interlace, videocap_mode, 15'b0, zorro_state};
+    //out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_ram_write_bytes, ZORRO3, 
+    //            video_control_interlace, videocap_mode, 15'b0, zorro_state};
     //          `-- 24                   `-- 23         `-- 22 `-- 7:0
     
-    /*out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_ram_write_bytes, ZORRO3, 
-                video_control_interlace, videocap_mode, 5'b0, videocap_ymax_sync, zorro_state};*/
+    out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_ram_write_bytes, ZORRO3, 
+                video_control_interlace, videocap_mode, videocap_ntsc, 14'b0, zorro_state};
   end
 
   assign slv_reg_rden = axi_arready & S_AXI_ARVALID & ~axi_rvalid;
