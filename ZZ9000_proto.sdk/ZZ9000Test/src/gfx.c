@@ -360,6 +360,7 @@ void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y
 	DRAW_LINE_PIXEL;
 
 	if (dx_abs >= dy_abs) {
+		if (!len) len = dx_abs;
 		for (uint16_t i = 0; i < len; i++) {
 			iy += dy_abs;
 			if (iy >= dx_abs) {
@@ -372,6 +373,7 @@ void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y
 		}
 	}
 	else {
+		if (!len) len = dy_abs;
 		for(uint16_t i = 0; i < len; i++) {
 			ix += dx_abs;
 			if (ix >= dy_abs) {
@@ -414,6 +416,7 @@ void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t 
 	SET_FG_PIXEL;
 
 	if (dx_abs >= dy_abs) {
+		if (!len) len = dx_abs;
 		for (uint16_t i = 0; i < len; i++) {
 			iy += dy_abs;
 			if (iy >= dx_abs) {
@@ -426,6 +429,7 @@ void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t 
 		}
 	}
 	else {
+		if (!len) len = dy_abs;
 		for (uint16_t i = 0; i < len; i++) {
 			ix += dx_abs;
 			if (ix >= dy_abs) {
