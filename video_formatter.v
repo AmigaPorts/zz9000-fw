@@ -48,9 +48,8 @@ localparam OP_VS=8;
 localparam OP_THRESH=9;
 localparam OP_POLARITY=10;
 localparam OP_RESET=11;
-localparam OP_MISC=12;
+localparam OP_LETTERBOX=12;
 localparam OP_SPRITEXY=13;
-localparam OP_SPRITE_ADDR=14;
 localparam OP_SPRITE_DATA=15;
 
 localparam CMODE_8BIT=0;
@@ -73,6 +72,7 @@ reg [15:0] screen_h_sync_start; //= 732;
 reg [15:0] screen_h_sync_end; //= 796;
 reg [15:0] screen_v_sync_start; //= 581;
 reg [15:0] screen_v_sync_end; //= 586;
+reg [11:0] screen_v_letterbox;
 
 localparam MAXWIDTH=1280; // 1920?!?
 reg [31:0] line_buffer[MAXWIDTH-1:0];
@@ -209,6 +209,7 @@ begin
     OP_DIMENSIONS: begin
         screen_height <= control_data_in[31:16];
         screen_width  <= control_data_in[15:0];
+        // don't forget to set letterbox!
       end
     OP_SCALE: begin
         scale_x  <= control_data_in[0];
@@ -237,19 +238,19 @@ begin
         sync_polarity <= 1;
         screen_h_max <= 864;
         screen_v_max <= 625;
+        screen_v_letterbox <= 625;
         screen_h_sync_start <= 732;
         screen_h_sync_end <= 796;
         screen_v_sync_start <= 581;
         screen_v_sync_end <= 586;
-        //vsync_request <= 1;
         scale_x <= 0;
         scale_y <= 1;
         screen_width <= 720;
         screen_height <= 576;
         colormode <= CMODE_32BIT;
       end
-    OP_MISC: begin
-        //vga_vsync_req_in <= control_data_in[0];
+    OP_LETTERBOX: begin
+        screen_v_letterbox <= control_data_in[15:0];
       end
     OP_SPRITEXY: begin
         sprite_y <= control_data_in[31:16];
@@ -263,6 +264,7 @@ end
 
 reg [31:0] palout;
 reg [11:0] vga_v_rez;
+reg [11:0] vga_v_letterbox;
 reg [11:0] vga_h_rez;
 reg [11:0] vga_v_max;
 reg [11:0] vga_h_max;
@@ -309,6 +311,7 @@ always @(posedge dvi_clk) begin
   vga_sync_polarity <= sync_polarity;
   vga_sprite_x <= sprite_x;
   vga_sprite_y <= sprite_y;
+  vga_v_letterbox <= screen_v_letterbox;
   
   // FIXME there is some non-determinism in the relationship
   // between this process and the fetching process
@@ -388,20 +391,23 @@ always @(posedge dvi_clk) begin
   case (vga_colormode)
     CMODE_8BIT:  pixout <= palout;
     CMODE_16BIT: pixout <= pixout32_dly;
-    //CMODE_15BIT: pixout <= pixout32_dly;
     CMODE_32BIT: pixout <= pixout32_dly2;
   endcase
   
   sprite_pix <= sprite_buffer[sprite_px];
-  sprite_on <= (counter_y >= vga_sprite_y && counter_y < (vga_sprite_y+16) 
-                && counter_x >= vga_sprite_x && counter_x < (vga_sprite_x+16));
-  
-  if (sprite_on) begin
+  if (counter_y >= vga_sprite_y && counter_y < (vga_sprite_y+16) 
+      && counter_x >= vga_sprite_x && counter_x < (vga_sprite_x+16)) begin
+    sprite_on <= 1;
     sprite_px <= sprite_px + 1;
+  end else begin
+    sprite_on <= 0;
   end
   
-  dvi_rgb <= (sprite_on && sprite_pix!='hff00ff) ? sprite_pix : pixout;
-    
+  if (counter_y < vga_v_letterbox)
+    dvi_rgb <= (sprite_on && sprite_pix!='hff00ff) ? sprite_pix : pixout;
+  else
+    dvi_rgb <= 0;
+  
   if (counter_x > vga_h_max) begin
     counter_x <= 0;
     if (counter_y > vga_v_max) begin
