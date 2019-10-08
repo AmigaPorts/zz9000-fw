@@ -49,6 +49,9 @@ localparam OP_THRESH=9;
 localparam OP_POLARITY=10;
 localparam OP_RESET=11;
 localparam OP_MISC=12;
+localparam OP_SPRITEXY=13;
+localparam OP_SPRITE_ADDR=14;
+localparam OP_SPRITE_DATA=15;
 
 localparam CMODE_8BIT=0;
 localparam CMODE_16BIT=1;
@@ -99,6 +102,16 @@ reg scale_y_effective;
 
 reg need_frame_sync; // vga domain
 reg need_frame_sync_reg; // fetch domain
+
+// sprite
+reg [23:0] sprite_buffer[(16*16)-1:0];
+reg [11:0] sprite_x = 0;
+reg [11:0] sprite_y = 0;
+reg [11:0] vga_sprite_x = 0; // vga domain
+reg [11:0] vga_sprite_y = 0; // vga domain
+reg [7:0]  sprite_px = 0; // vga domain
+reg [23:0] sprite_pix; // vga domain
+reg sprite_on = 0; // vga domain
 
 always @(posedge m_axis_vid_aclk)
   begin
@@ -238,6 +251,13 @@ begin
     OP_MISC: begin
         //vga_vsync_req_in <= control_data_in[0];
       end
+    OP_SPRITEXY: begin
+        sprite_y <= control_data_in[31:16];
+        sprite_x <= control_data_in[15:0];
+      end
+    OP_SPRITE_DATA: begin
+        sprite_buffer[control_data_in[31:24]] <= control_data_in[23:0];
+      end
   endcase
 end
 
@@ -287,6 +307,8 @@ always @(posedge dvi_clk) begin
   vga_scale_x <= scale_x;
   vga_colormode <= colormode;
   vga_sync_polarity <= sync_polarity;
+  vga_sprite_x <= sprite_x;
+  vga_sprite_y <= sprite_y;
   
   // FIXME there is some non-determinism in the relationship
   // between this process and the fetching process
@@ -370,12 +392,21 @@ always @(posedge dvi_clk) begin
     CMODE_32BIT: pixout <= pixout32_dly2;
   endcase
   
-  dvi_rgb <= pixout;
+  sprite_pix <= sprite_buffer[sprite_px];
+  sprite_on <= (counter_y >= vga_sprite_y && counter_y < (vga_sprite_y+16) 
+                && counter_x >= vga_sprite_x && counter_x < (vga_sprite_x+16));
+  
+  if (sprite_on) begin
+    sprite_px <= sprite_px + 1;
+  end
+  
+  dvi_rgb <= (sprite_on && sprite_pix!='hff00ff) ? sprite_pix : pixout;
     
   if (counter_x > vga_h_max) begin
     counter_x <= 0;
     if (counter_y > vga_v_max) begin
       counter_y <= 0;
+      sprite_px <= 0;
     end else begin
       counter_y <= counter_y + 1'b1;
     end
