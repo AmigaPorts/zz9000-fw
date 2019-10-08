@@ -450,7 +450,7 @@ void video_formatter_valign() {
 }
 
 #define VF_DLY ;
-#define MNTVF_OP_LETTERBOX 12
+#define MNTVF_OP_UNUSED 12
 #define MNTVF_OP_SPRITE_XY 13
 #define MNTVF_OP_SPRITE_DATA 15
 #define MNTVF_OP_MAX 6
@@ -560,6 +560,7 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz,
 #define ZZVMODE_1920x1080_60 	5
 #define ZZVMODE_720x576			6 // 50hz
 #define ZZVMODE_1920x1080_50	7 // 50hz
+#define ZZVMODE_720x480			8
 
 void video_mode_init(int mode, int scalemode, int colormode) {
 	int hres, vres, hmax, vmax, hstart, hend, vstart, vend, polarity, mhz, vhz, hdmi;
@@ -608,6 +609,20 @@ void video_mode_init(int mode, int scalemode, int colormode) {
 		hres = 640;
 		vres = 480;
 		hstart = 656;
+		hend = 752;
+		hmax = 800;
+		vstart = 490;
+		vend = 492;
+		vmax = 525;
+		polarity = 0;
+		mhz = 25;
+		vhz = 60;
+		hdmi = 0;
+		break;
+	case ZZVMODE_720x480:
+		hres = 720;
+		vres = 480;
+		hstart = 720;
 		hend = 752;
 		hmax = 800;
 		vstart = 490;
@@ -698,8 +713,6 @@ void video_mode_init(int mode, int scalemode, int colormode) {
 	video_formatter_init(scalemode, colormode, hres, vres, hmax, vmax, hstart,
 			hend, vstart, vend, polarity);
 
-	video_formatter_write(vres, MNTVF_OP_LETTERBOX);
-
 	vmode_hsize = hres;
 	vmode_vsize = vres;
 	vmode_vdiv = vdiv;
@@ -760,6 +773,10 @@ static int videocap_video_mode = ZZVMODE_800x600;
 static int video_mode = ZZVMODE_800x600 | 2 << 12 | MNTVA_COLOR_32BIT << 8;
 static int default_pan_offset = 0x00e00bd0;
 
+void videocap_area_clear() {
+	fb_fill(0x00e00000 / 4);
+}
+
 void handle_amiga_reset() {
 	if (videocap_video_mode == ZZVMODE_800x600) {
 		default_pan_offset = 0x00e00bd0;
@@ -768,7 +785,7 @@ void handle_amiga_reset() {
 	}
 
 	framebuffer_pan_offset = default_pan_offset;
-	fb_fill(framebuffer_pan_offset / 4);
+	videocap_area_clear();
 
 	printf("    _______________   ___   ___   ___  \n");
 	printf("   |___  /___  / _ \\ / _ \\ / _ \\ / _ \\ \n");
@@ -782,8 +799,6 @@ void handle_amiga_reset() {
 	// scalemode 2 (vertical doubling)
 	video_mode_init(videocap_video_mode, 2, MNTVA_COLOR_32BIT);
 	video_mode = videocap_video_mode | 2 << 12 | MNTVA_COLOR_32BIT << 8;
-
-	video_formatter_write(574, MNTVF_OP_LETTERBOX);
 
 	ethernet_init();
 	sprite_reset();
@@ -1007,6 +1022,7 @@ int main() {
 	// zorro state
 	u32 zstate_raw;
 	int interlace_old = 0;
+	int videocap_ntsc_old = 0;
 
 	handle_amiga_reset();
 
@@ -1027,7 +1043,6 @@ int main() {
 	printf("core1 now idling.\n");
 
 	int cache_counter = 0;
-	int debug_counter = 0;
 	int videocap_enabled_old = 1;
 	int scalemode = 0;
 	int colormode = 0;
@@ -1114,8 +1129,7 @@ int main() {
 					framebuffer_pan_offset |= zdata;
 
 					if (framebuffer_pan_offset != framebuffer_pan_offset_old) {
-						init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv,
-								vmode_vdiv);
+						init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
 						video_formatter_valign();
 						framebuffer_pan_offset_old = framebuffer_pan_offset;
 					}
@@ -1142,7 +1156,7 @@ int main() {
 					interrupt_enabled = zdata & 1;
 					break;
 				case MNT_BASE_MODE:
-					printf("mode change: %x\n", zdata);
+					printf("mode change: %lx\n", zdata);
 
 					if (video_mode != zdata) {
 						int mode = zdata & 0xff;
@@ -1157,8 +1171,8 @@ int main() {
 					video_mode = zdata;
 					break;
 				case MNT_BASE_SPRITEX:
-					// TODO properly reset these
 					sprite_x = zdata;
+					if (sprite_x>32000) sprite_x = 0; // FIXME kludge
 					// horizontally doubled mode
 					if (scalemode&1) sprite_x*=2;
 					video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
@@ -1564,6 +1578,38 @@ int main() {
 
 			// FIXME magic constant
 			if (videocap_enabled && framebuffer_pan_offset >= 0xe00000) {
+				if (!videocap_enabled_old) {
+					videocap_area_clear();
+
+					if (!videocap_ntsc) {
+						// remember current video mode as desired video capture video mode for PAL
+						videocap_video_mode = video_mode & 0xff;
+					}
+
+					videocap_ntsc_old = 0;
+				}
+
+				if (videocap_ntsc != videocap_ntsc_old) {
+					// change between ntsc+pal
+					videocap_area_clear();
+
+					if (videocap_ntsc) {
+						framebuffer_pan_offset = 0x00e00000;
+						video_mode_init(ZZVMODE_720x480, 2, MNTVA_COLOR_32BIT);
+					} else {
+						// PAL
+						// FIXME duplication
+						if (videocap_video_mode == ZZVMODE_800x600) {
+							default_pan_offset = 0x00e00bd0;
+						} else {
+							default_pan_offset = 0x00e00000;
+						}
+						framebuffer_pan_offset = default_pan_offset;
+						video_mode_init(videocap_video_mode, 2, MNTVA_COLOR_32BIT);
+					}
+				}
+				videocap_ntsc_old = videocap_ntsc;
+
 				int interlace = !!(zstate_raw & (1 << 24));
 				if (interlace != interlace_old) {
 					// interlace has changed, we need to reconfigure vdma for the new screen height
@@ -1571,30 +1617,17 @@ int main() {
 					if (interlace) {
 						vdiv = 1;
 					}
-					// clear videocap area
-					fb_fill(framebuffer_pan_offset / 4);
+					videocap_area_clear();
 					init_vdma(vmode_hsize, vmode_vsize, 1, vdiv);
 					video_formatter_valign();
 					printf("videocap interlace mode changed.\n");
 				}
 				interlace_old = interlace;
-
-				if (!videocap_enabled_old) {
-					// remember current video mode as desired video capture video mode
-					videocap_video_mode = video_mode & 0xff;
-				}
-
-				if (videocap_ntsc) {
-					video_formatter_write(512, MNTVF_OP_LETTERBOX);
-				} else {
-					video_formatter_write(574, MNTVF_OP_LETTERBOX);
-				}
 			}
 
 			if (videocap_enabled_old != videocap_enabled) {
 				if (framebuffer_pan_offset >= 0xe00000) {
-					// clear videocap area
-					fb_fill(framebuffer_pan_offset / 4);
+					videocap_area_clear();
 				}
 				videocap_enabled_old = videocap_enabled;
 			}
