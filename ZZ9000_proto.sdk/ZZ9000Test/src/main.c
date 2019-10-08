@@ -450,6 +450,9 @@ void video_formatter_valign() {
 }
 
 #define VF_DLY ;
+#define MNTVF_OP_LETTERBOX 12
+#define MNTVF_OP_SPRITE_XY 13
+#define MNTVF_OP_SPRITE_DATA 15
 #define MNTVF_OP_MAX 6
 #define MNTVF_OP_HS 7
 #define MNTVF_OP_VS 8
@@ -695,10 +698,53 @@ void video_mode_init(int mode, int scalemode, int colormode) {
 	video_formatter_init(scalemode, colormode, hres, vres, hmax, vmax, hstart,
 			hend, vstart, vend, polarity);
 
+	video_formatter_write(vres, MNTVF_OP_LETTERBOX);
+
 	vmode_hsize = hres;
 	vmode_vsize = vres;
 	vmode_vdiv = vdiv;
 	vmode_hdiv = hdiv;
+}
+
+uint16_t sprite_x = 0;
+uint16_t sprite_y = 0;
+
+uint8_t sprite_template[16*16] = {
+		1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+		1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,
+		2,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,
+		2,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,
+		0,2,1,1,1,1,1,1,1,1,0,0,0,0,0,0,
+		0,2,1,1,1,1,1,1,1,1,1,1,0,0,0,0,
+		0,0,2,1,1,1,1,1,1,1,1,2,0,0,0,0,
+		0,0,2,1,1,1,1,1,1,1,2,2,0,0,0,0,
+		0,0,0,2,1,1,1,1,1,1,2,0,0,0,0,0,
+		0,0,0,2,1,1,1,1,1,1,1,0,0,0,0,0,
+		0,0,0,0,2,1,1,2,2,1,1,1,0,0,0,0,
+		0,0,0,0,2,1,2,2,2,2,1,1,1,0,0,0,
+		0,0,0,0,0,2,2,0,0,2,2,1,2,0,0,0,
+		0,0,0,0,0,2,0,0,0,0,2,2,2,0,0,0,
+		0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,1,
+		0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,
+};
+
+void sprite_reset() {
+	uint16_t sprite_x = 2000;
+	uint16_t sprite_y = 2000;
+	video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
+
+	for (int y=0; y<16; y++) {
+		for (int x=0; x<16; x++) {
+			uint8_t addr = y*16+x;
+			uint32_t data = 0xff00ff;
+			if (sprite_template[y*16+x]==1) {
+				data = 0xffffff;
+			} else if (sprite_template[y*16+x]==2) {
+				data = 0x000000;
+			}
+			video_formatter_write((addr << 24) | data, MNTVF_OP_SPRITE_DATA);
+		}
+	}
 }
 
 // this mode can be changed by amiga software to select a different resolution / framerate for
@@ -735,7 +781,10 @@ void handle_amiga_reset() {
 	video_mode_init(videocap_video_mode, 2, MNTVA_COLOR_32BIT);
 	video_mode = videocap_video_mode | 2 << 12 | MNTVA_COLOR_32BIT << 8;
 
+	video_formatter_write(574, MNTVF_OP_LETTERBOX);
+
 	ethernet_init();
+	sprite_reset();
 }
 
 uint16_t arm_app_output_event_serial = 0;
@@ -935,9 +984,6 @@ int main() {
 	uint16_t blitter_user3 = 0;
 	uint16_t blitter_user4 = 0;
 
-	uint16_t sprite_x = 0;
-	uint16_t sprite_y = 0;
-
 	// ARM app run environment
 	arm_run_env.api_version = 1;
 	arm_run_env.fn_putchar = _putchar;
@@ -954,11 +1000,9 @@ int main() {
 	uint32_t arm_run_address = 0;
 
 	// ethernet state
-	uint32_t old_frames_received = 0;
 	uint16_t ethernet_send_result = 0;
 
 	// zorro state
-	u32 old_zstate;
 	u32 zstate_raw;
 	int interlace_old = 0;
 
@@ -983,6 +1027,8 @@ int main() {
 	int cache_counter = 0;
 	int debug_counter = 0;
 	int videocap_enabled_old = 1;
+	int scalemode = 0;
+	int colormode = 0;
 	uint32_t framebuffer_pan_offset_old = framebuffer_pan_offset;
 	video_mode = 0x2200;
 
@@ -996,8 +1042,7 @@ int main() {
 		u32 readreq = (zstate & (1 << 30));
 
 		zstate = zstate & 0xff;
-		if (zstate > 52)
-			zstate = 52;
+		if (zstate > 52) zstate = 52;
 
 		if (writereq) {
 			u32 zaddr = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG0);
@@ -1031,20 +1076,14 @@ int main() {
 				u32 z3 = (zstate_raw & (1 << 25));
 
 				if (z3) {
-					if (ds3)
-						ptr[0] = zdata >> 24;
-					if (ds2)
-						ptr[1] = zdata >> 16;
-					if (ds1)
-						ptr[2] = zdata >> 8;
-					if (ds0)
-						ptr[3] = zdata;
+					if (ds3) ptr[0] = zdata >> 24;
+					if (ds2) ptr[1] = zdata >> 16;
+					if (ds1) ptr[2] = zdata >> 8;
+					if (ds0) ptr[3] = zdata;
 				} else {
 					// swap bytes
-					if (ds1)
-						ptr[0] = zdata >> 8;
-					if (ds0)
-						ptr[1] = zdata;
+					if (ds1) ptr[0] = zdata >> 8;
+					if (ds0) ptr[1] = zdata;
 				}
 			} else if (zaddr >= MNT_REG_BASE && zaddr < MNT_FB_BASE) {
 				// register area
@@ -1105,8 +1144,8 @@ int main() {
 
 					if (video_mode != zdata) {
 						int mode = zdata & 0xff;
-						int colormode = (zdata & 0xf00) >> 8;
-						int scalemode = (zdata & 0xf000) >> 12;
+						colormode = (zdata & 0xf00) >> 8;
+						scalemode = (zdata & 0xf000) >> 12;
 						printf("mode: %d color: %d scale: %d\n", mode,
 								colormode, scalemode);
 
@@ -1118,11 +1157,15 @@ int main() {
 				case MNT_BASE_SPRITEX:
 					// TODO properly reset these
 					sprite_x = zdata;
-					video_formatter_write((sprite_y << 16) | sprite_x, 13);
+					// horizontally doubled mode
+					if (scalemode&1) sprite_x*=2;
+					video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 					break;
 				case MNT_BASE_SPRITEY:
 					sprite_y = zdata;
-					video_formatter_write((sprite_y << 16) | sprite_x, 13);
+					// vertically doubled mode
+					if (scalemode&2) sprite_y*=2;
+					video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 					break;
 				case MNT_BASE_BLIT_SRC_PITCH:
 					blitter_src_pitch = zdata;
@@ -1515,6 +1558,7 @@ int main() {
 			cache_counter++;
 
 			int videocap_enabled = (zstate_raw & (1 << 23));
+			int videocap_ntsc = (zstate_raw & (1<<22));
 
 			// FIXME magic constant
 			if (videocap_enabled && framebuffer_pan_offset >= 0xe00000) {
@@ -1536,6 +1580,12 @@ int main() {
 				if (!videocap_enabled_old) {
 					// remember current video mode as desired video capture video mode
 					videocap_video_mode = video_mode & 0xff;
+				}
+
+				if (videocap_ntsc) {
+					video_formatter_write(512, MNTVF_OP_LETTERBOX);
+				} else {
+					video_formatter_write(574, MNTVF_OP_LETTERBOX);
 				}
 			}
 
