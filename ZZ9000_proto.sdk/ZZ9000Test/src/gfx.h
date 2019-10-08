@@ -24,19 +24,20 @@ typedef struct Vec2 {
 void set_fb(uint32_t* fb_, uint32_t pitch);
 void horizline(uint16_t x1, uint16_t x2, uint16_t y, uint32_t color);
 
-void fill_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb, uint32_t color_format);
+void fill_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint32_t rect_rgb, uint32_t color_format, uint8_t mask);
+void fill_rect_solid(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint32_t rect_rgb, uint32_t color_format);
 void fill_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint8_t rect_rgb);
 void fill_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_rgb);
 void fill_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb);
 
-void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch);
+void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch);
 void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy);
 void copy_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy);
 void copy_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy);
 
 void fill_template(uint32_t bpp, uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2,
 		uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color, uint16_t x_offset, uint16_t y_offset, uint8_t* tmpl_data, uint16_t templ_pitch, uint16_t loop_rows);
-void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2,
+void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h,
 	uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color,
 	uint16_t x_offset, uint16_t y_offset,
 	uint8_t *tmpl_data, uint16_t tmpl_pitch, uint16_t loop_rows);
@@ -45,13 +46,19 @@ void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y
 void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2, uint16_t len, uint32_t fg_color, uint32_t color_format);
 
 void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t h, uint16_t sh, uint8_t draw_mode, uint8_t planes, uint8_t mask, uint8_t layer_mask, uint16_t src_line_pitch, uint8_t *bmp_data_src);
-void invert_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint8_t mask, uint32_t color_format);
+void invert_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint8_t mask, uint32_t color_format);
 
 #define MNTVA_COLOR_8BIT     0
 #define MNTVA_COLOR_16BIT565 1
 #define MNTVA_COLOR_32BIT    2
 #define MNTVA_COLOR_1BIT     3
 #define MNTVA_COLOR_15BIT    4
+
+// see http://amigadev.elowar.com/read/ADCD_2.1/Libraries_Manual_guide/node0351.html
+#define JAM1	    0	      /* jam 1 color into raster */
+#define JAM2	    1	      /* jam 2 colors into raster */
+#define COMPLEMENT  2	      /* XOR bits into raster */
+#define INVERSVID   4	      /* inverse video for drawing modes */
 
 /* Macros for keeping gfx.c a bit more tidy */
 #define SET_FG_PIXEL8(a) \
