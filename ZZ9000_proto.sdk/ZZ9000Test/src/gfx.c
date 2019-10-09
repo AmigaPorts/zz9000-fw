@@ -29,6 +29,48 @@ void set_fb(uint32_t* fb_, uint32_t pitch) {
 	fb_pitch=pitch;
 }
 
+void video_formatter_write(uint32_t data, uint16_t op);
+
+void update_hw_sprite(uint8_t *data, uint32_t *colors, uint16_t w, uint16_t h)
+{
+	uint8_t cur_bit = 0x80;
+	uint8_t cur_byte = 0, out_pos = 0;
+	uint8_t line_pitch = (w / 8) * 2;
+
+	for (uint8_t y_line = 0; y_line < 16; y_line++) {
+		while(out_pos < 8) {
+			cur_byte = (data[y_line * line_pitch] & cur_bit) ? 1: 0;
+			if (data[(y_line * line_pitch) + 2] & cur_bit) cur_byte += 2;
+
+			video_formatter_write(((y_line * w) + out_pos) << 24 | (colors[cur_byte] & 0x00ffffff), 15);
+
+			cur_byte = (data[(y_line * line_pitch) + 1] & cur_bit) ? 1 : 0;
+			if (data[(y_line * line_pitch) + 3] & cur_bit) cur_byte += 2;
+
+			video_formatter_write(((y_line * w) + out_pos + 8) << 24 | (colors[cur_byte] & 0x00ffffff), 15);
+
+			if (w > 16) {
+				//cur_byte = (data[(y_line * line_pitch) + 1] & cur_bit) ? 1 : 0;
+				//if (data[(y_line * line_pitch) + 3] & cur_bit) cur_byte += 2;
+
+				//video_formatter_write(((y_line * w) + out_pos + 16) << 24 | (colors[cur_byte] & 0x00ffffff), 15);
+			}
+
+			out_pos++;
+			cur_bit >>= 1;
+		}
+		cur_bit = 0x80;
+		out_pos = 0;
+	}
+}
+
+void clear_hw_sprite(uint8_t w, uint8_t h)
+{
+	//for (uint16_t i = 0; i < w * h; i++)
+	for (uint16_t i = 0; i < 16 * 16; i++)
+		video_formatter_write((i << 24) | 0xff00ff, 15);
+}
+
 void horizline(uint16_t x1, uint16_t x2, uint16_t y, uint32_t color) {
 	uint32_t* p=fb+y*fb_pitch;
 	uint16_t tmp;

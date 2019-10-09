@@ -722,6 +722,15 @@ void video_mode_init(int mode, int scalemode, int colormode) {
 uint16_t sprite_x = 0;
 uint16_t sprite_y = 0;
 
+int8_t sprite_x_offset = 0;
+int8_t sprite_y_offset = 0;
+
+uint8_t sprite_width  = 16;
+uint8_t sprite_height = 16;
+
+uint32_t sprite_colors[4] = { 0x00ff00ff, 0x00000000, 0x00000000, 0x00000000 };
+
+
 uint8_t sprite_template[16*16] = {
 		0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,
 		0,0,0,3,3,1,1,0,0,0,0,0,0,0,0,0,
@@ -1171,18 +1180,37 @@ int main() {
 					video_mode = zdata;
 					break;
 				case MNT_BASE_SPRITEX:
-					sprite_x = zdata;
+				 	// FIXME the mouse cursor image is offset three pixels to the right when displayed by the FPGA.
+					sprite_x = zdata + sprite_x_offset + 3;
 					if (sprite_x>32000) sprite_x = 0; // FIXME kludge
 					// horizontally doubled mode
 					if (scalemode&1) sprite_x*=2;
 					video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 					break;
 				case MNT_BASE_SPRITEY:
-					sprite_y = zdata;
+					sprite_y = zdata + sprite_y_offset;
 					// vertically doubled mode
 					if (scalemode&2) sprite_y*=2;
 					video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 					break;
+				case MNT_BASE_RECTOP + 0x38: { // SPRITE_BITMAP
+					uint8_t* bmp_data = (uint8_t*) ((u32) framebuffer
+							+ blitter_src_offset);
+
+					clear_hw_sprite(sprite_width, sprite_height);
+					
+					sprite_x_offset = rect_x1;
+					sprite_y_offset = rect_y1;
+					sprite_width  = rect_x2;
+					sprite_height = rect_y2;
+
+					update_hw_sprite(bmp_data, sprite_colors, sprite_width, sprite_height);
+					break;
+				}
+				case MNT_BASE_RECTOP + 0x3a: { // SPRITE_COLORS
+					sprite_colors[zdata] = (blitter_user1 << 16) | blitter_user2;
+					break;
+				}
 				case MNT_BASE_BLIT_SRC_PITCH:
 					blitter_src_pitch = zdata;
 					break;
