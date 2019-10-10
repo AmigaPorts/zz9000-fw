@@ -752,8 +752,9 @@ uint8_t sprite_template[16*16] = {
 };
 
 void sprite_reset() {
-	uint16_t sprite_x = 2000;
-	uint16_t sprite_y = 2000;
+	sprite_x = 2000;
+	sprite_y = 2000;
+	sprite_enabled = 0;
 	video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 
 	for (int y=0; y<16; y++) {
