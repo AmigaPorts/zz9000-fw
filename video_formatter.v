@@ -50,7 +50,7 @@ localparam OP_POLARITY=10;
 localparam OP_RESET=11;
 localparam OP_UNUSED1=12;
 localparam OP_SPRITEXY=13;
-localparam OP_UNUSED2=14;
+localparam OP_SPRITE_ADDR=14;
 localparam OP_SPRITE_DATA=15;
 
 localparam CMODE_8BIT=0;
@@ -255,11 +255,10 @@ begin
         sprite_y <= control_data_in[31:16];
         sprite_x <= control_data_in[15:0];
       end
+    OP_SPRITE_ADDR: begin
+        sprite_addr_in <= control_data_in[11:0];
+      end
     OP_SPRITE_DATA: begin
-        if (control_data_in[24])
-          sprite_addr_in <= 0;
-        else
-          sprite_addr_in <= sprite_addr_in + 1'b1;
         sprite_buffer[sprite_addr_in] <= control_data_in[23:0];
       end
   endcase
