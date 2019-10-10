@@ -751,10 +751,14 @@ uint8_t sprite_template[16*16] = {
 		0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 };
 
-void sprite_reset() {
+void sprite_hide() {
 	sprite_x = 2000;
 	sprite_y = 2000;
 	sprite_enabled = 0;
+}
+
+void sprite_reset() {
+	sprite_hide();
 	video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 
 	for (int y=0; y<16; y++) {
@@ -1204,10 +1208,9 @@ int main() {
 						sprite_enabled = 1;
 						break;
 					}
-					else if (zdata == 2) {
-						sprite_x = sprite_y = 2000;
+					else if (zdata == 2) { // Hardware sprite disabled
+						sprite_hide();
 						video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
-						sprite_enabled = 0;
 						break;
 					}
 
@@ -1226,6 +1229,7 @@ int main() {
 				}
 				case MNT_BASE_RECTOP + 0x3a: { // SPRITE_COLORS
 					sprite_colors[zdata] = (blitter_user1 << 16) | blitter_user2;
+					if (sprite_colors[zdata] == 0xff00ff) sprite_colors[zdata] = 0xfe00fe;
 					break;
 				}
 				case MNT_BASE_BLIT_SRC_PITCH:
