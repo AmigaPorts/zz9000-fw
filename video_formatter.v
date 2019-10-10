@@ -104,12 +104,16 @@ reg need_frame_sync; // vga domain
 reg need_frame_sync_reg; // fetch domain
 
 // sprite
-reg [23:0] sprite_buffer[(16*16)-1:0];
+localparam SPRITE_W = 32;
+localparam SPRITE_H = 48;
+localparam SPRITE_SIZE = SPRITE_W*SPRITE_H;
+reg [23:0] sprite_buffer[SPRITE_SIZE-1:0];
+reg [11:0] sprite_addr_in = 0;
 reg [11:0] sprite_x = 0;
 reg [11:0] sprite_y = 0;
 reg [11:0] vga_sprite_x = 0; // vga domain
 reg [11:0] vga_sprite_y = 0; // vga domain
-reg [7:0]  sprite_px = 0; // vga domain
+reg [11:0] sprite_px = 0; // vga domain
 reg [23:0] sprite_pix; // vga domain
 reg sprite_on = 0; // vga domain
 
@@ -252,7 +256,11 @@ begin
         sprite_x <= control_data_in[15:0];
       end
     OP_SPRITE_DATA: begin
-        sprite_buffer[control_data_in[31:24]] <= control_data_in[23:0];
+        if (control_data_in[24])
+          sprite_addr_in <= 0;
+        else
+          sprite_addr_in <= sprite_addr_in + 1'b1;
+        sprite_buffer[sprite_addr_in] <= control_data_in[23:0];
       end
   endcase
 end
@@ -388,8 +396,8 @@ always @(posedge dvi_clk) begin
   endcase
   
   sprite_pix <= sprite_buffer[sprite_px];
-  if (counter_y >= vga_sprite_y && counter_y < (vga_sprite_y+16) 
-      && counter_x >= vga_sprite_x && counter_x < (vga_sprite_x+16)) begin
+  if (counter_y >= vga_sprite_y && counter_y < (vga_sprite_y+SPRITE_H) 
+      && counter_x >= vga_sprite_x && counter_x < (vga_sprite_x+SPRITE_W)) begin
     sprite_on <= 1;
     sprite_px <= sprite_px + 1;
   end else begin
