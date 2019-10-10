@@ -1229,6 +1229,7 @@ int main() {
 				}
 				case MNT_BASE_RECTOP + 0x3a: { // SPRITE_COLORS
 					sprite_colors[zdata] = (blitter_user1 << 16) | blitter_user2;
+					if (sprite_colors[zdata] == 0xff00ff) sprite_colors[zdata] = 0xfe00fe;
 					break;
 				}
 				case MNT_BASE_BLIT_SRC_PITCH:
