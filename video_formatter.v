@@ -310,8 +310,10 @@ always @(posedge dvi_clk) begin
   vga_scale_x <= scale_x;
   vga_colormode <= colormode;
   vga_sync_polarity <= sync_polarity;
-  vga_sprite_x <= sprite_x;
-  vga_sprite_y <= sprite_y;
+  if (counter_y == 0) begin
+    vga_sprite_x <= sprite_x;
+    vga_sprite_y <= sprite_y;
+  end
   
   // FIXME there is some non-determinism in the relationship
   // between this process and the fetching process
