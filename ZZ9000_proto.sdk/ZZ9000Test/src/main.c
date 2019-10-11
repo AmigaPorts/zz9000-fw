@@ -452,6 +452,7 @@ void video_formatter_valign() {
 #define VF_DLY ;
 #define MNTVF_OP_UNUSED 12
 #define MNTVF_OP_SPRITE_XY 13
+#define MNTVF_OP_SPRITE_ADDR 14
 #define MNTVF_OP_SPRITE_DATA 15
 #define MNTVF_OP_MAX 6
 #define MNTVF_OP_HS 7
