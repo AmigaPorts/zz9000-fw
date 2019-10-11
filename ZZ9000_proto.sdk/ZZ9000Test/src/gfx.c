@@ -37,21 +37,24 @@ void update_hw_sprite(uint8_t *data, uint32_t *colors, uint16_t w, uint16_t h)
 	uint8_t cur_byte = 0, out_pos = 0;
 	uint8_t line_pitch = (w / 8) * 2;
 
-	for (uint8_t y_line = 0; y_line < 16; y_line++) {
+	for (uint8_t y_line = 0; y_line < h; y_line++) {
 		while(out_pos < 8) {
 			cur_byte = (data[y_line * line_pitch] & cur_bit) ? 1: 0;
 			if (data[(y_line * line_pitch) + 2] & cur_bit) cur_byte += 2;
 
-			video_formatter_write(((y_line * w) + out_pos) << 24 | (colors[cur_byte] & 0x00ffffff), 15);
+			video_formatter_write(((y_line * 32) + out_pos), 14);
+			video_formatter_write(colors[cur_byte] & 0x00ffffff, 15);
 
 			cur_byte = (data[(y_line * line_pitch) + 1] & cur_bit) ? 1 : 0;
 			if (data[(y_line * line_pitch) + 3] & cur_bit) cur_byte += 2;
 
-			video_formatter_write(((y_line * w) + out_pos + 8) << 24 | (colors[cur_byte] & 0x00ffffff), 15);
+			video_formatter_write(((y_line * 32) + out_pos + 8), 14);
+			video_formatter_write(colors[cur_byte] & 0x00ffffff, 15);
 
+			// FIXME
 			if (w > 16) {
-				//cur_byte = (data[(y_line * line_pitch) + 1] & cur_bit) ? 1 : 0;
-				//if (data[(y_line * line_pitch) + 3] & cur_bit) cur_byte += 2;
+				//cur_byte = (data[(y_line * line_pitch) + 4] & cur_bit) ? 1 : 0;
+				//if (data[(y_line * line_pitch) + 5] & cur_bit) cur_byte += 2;
 
 				//video_formatter_write(((y_line * w) + out_pos + 16) << 24 | (colors[cur_byte] & 0x00ffffff), 15);
 			}
@@ -67,8 +70,10 @@ void update_hw_sprite(uint8_t *data, uint32_t *colors, uint16_t w, uint16_t h)
 void clear_hw_sprite(uint8_t w, uint8_t h)
 {
 	//for (uint16_t i = 0; i < w * h; i++)
-	for (uint16_t i = 0; i < 16 * 16; i++)
-		video_formatter_write((i << 24) | 0xff00ff, 15);
+	for (uint16_t i = 0; i < 32 * 48; i++) {
+		video_formatter_write(i, 14);
+		video_formatter_write(0xff00ff, 15);
+	}
 }
 
 void horizline(uint16_t x1, uint16_t x2, uint16_t y, uint32_t color) {
