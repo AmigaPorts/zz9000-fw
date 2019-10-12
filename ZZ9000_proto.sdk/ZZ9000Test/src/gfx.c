@@ -34,33 +34,41 @@ void video_formatter_write(uint32_t data, uint16_t op);
 void update_hw_sprite(uint8_t *data, uint32_t *colors, uint16_t w, uint16_t h)
 {
 	uint8_t cur_bit = 0x80;
-	uint8_t cur_byte = 0, out_pos = 0;
+	uint8_t cur_color = 0, out_pos = 0, iter_offset = 0;
 	uint8_t line_pitch = (w / 8) * 2;
+	uint8_t cur_bytes[8];
 
 	for (uint8_t y_line = 0; y_line < h; y_line++) {
+		if (w <= 16) {
+			cur_bytes[0] = data[y_line * line_pitch];
+			cur_bytes[1] = data[(y_line * line_pitch) + 2];
+			cur_bytes[2] = data[(y_line * line_pitch) + 1];
+			cur_bytes[3] = data[(y_line * line_pitch) + 3];
+		}
+		else {
+			cur_bytes[0] = data[y_line * line_pitch];
+			cur_bytes[1] = data[(y_line * line_pitch) + 4];
+			cur_bytes[2] = data[(y_line * line_pitch) + 1];
+			cur_bytes[3] = data[(y_line * line_pitch) + 5];
+			cur_bytes[4] = data[(y_line * line_pitch) + 2];
+			cur_bytes[5] = data[(y_line * line_pitch) + 6];
+			cur_bytes[6] = data[(y_line * line_pitch) + 3];
+			cur_bytes[7] = data[(y_line * line_pitch) + 7];
+		}
+
 		while(out_pos < 8) {
-			cur_byte = (data[y_line * line_pitch] & cur_bit) ? 1: 0;
-			if (data[(y_line * line_pitch) + 2] & cur_bit) cur_byte += 2;
+			for (uint8_t i = 0; i < line_pitch; i += 2) {
+				cur_color = (cur_bytes[i] & cur_bit) ? 1 : 0;
+				if (cur_bytes[i + 1] & cur_bit) cur_color += 2;
 
-			video_formatter_write(((y_line * 32) + out_pos), 14);
-			video_formatter_write(colors[cur_byte] & 0x00ffffff, 15);
-
-			cur_byte = (data[(y_line * line_pitch) + 1] & cur_bit) ? 1 : 0;
-			if (data[(y_line * line_pitch) + 3] & cur_bit) cur_byte += 2;
-
-			video_formatter_write(((y_line * 32) + out_pos + 8), 14);
-			video_formatter_write(colors[cur_byte] & 0x00ffffff, 15);
-
-			// FIXME
-			if (w > 16) {
-				//cur_byte = (data[(y_line * line_pitch) + 4] & cur_bit) ? 1 : 0;
-				//if (data[(y_line * line_pitch) + 5] & cur_bit) cur_byte += 2;
-
-				//video_formatter_write(((y_line * w) + out_pos + 16) << 24 | (colors[cur_byte] & 0x00ffffff), 15);
+				video_formatter_write(((y_line * 32) + out_pos + iter_offset), 14);
+				video_formatter_write(colors[cur_color] & 0x00ffffff, 15);
+				iter_offset += 8;
 			}
 
 			out_pos++;
 			cur_bit >>= 1;
+			iter_offset = 0;
 		}
 		cur_bit = 0x80;
 		out_pos = 0;
