@@ -23,7 +23,8 @@ typedef struct Vec2 {
 
 void set_fb(uint32_t* fb_, uint32_t pitch);
 void update_hw_sprite(uint8_t *data, uint32_t *colors, uint16_t w, uint16_t h);
-void clear_hw_sprite(uint8_t w, uint8_t h);
+void clip_hw_sprite(int16_t offset_x, int16_t offset_y);
+void clear_hw_sprite();
 void horizline(uint16_t x1, uint16_t x2, uint16_t y, uint32_t color);
 
 void fill_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint32_t rect_rgb, uint32_t color_format, uint8_t mask);

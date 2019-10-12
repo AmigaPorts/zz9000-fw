@@ -720,9 +720,12 @@ void video_mode_init(int mode, int scalemode, int colormode) {
 	vmode_hdiv = hdiv;
 }
 
-uint16_t sprite_x = 0;
-uint16_t sprite_y = 0;
+int16_t sprite_x = 0, sprite_x_adj = 0;
+int16_t sprite_y = 0, sprite_y_adj = 0;
 uint16_t sprite_enabled = 0;
+uint32_t sprite_buf[32 * 48];
+uint8_t sprite_clipped = 0;
+int16_t sprite_clip_x = 0, sprite_clip_y = 0;
 
 int8_t sprite_x_offset = 0;
 int8_t sprite_y_offset = 0;
@@ -1187,22 +1190,41 @@ int main() {
 					video_mode = zdata;
 					break;
 				case MNT_BASE_SPRITEX:
-				 	// FIXME the mouse cursor image is offset three pixels to the right when displayed by the FPGA.
-					if (!sprite_enabled)
-						break;
-					sprite_x = zdata + sprite_x_offset + 3;
-					if (sprite_x>32000) sprite_x = 0; // FIXME kludge
-					// horizontally doubled mode
-					if (scalemode&1) sprite_x*=2;
-					video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
-					break;
 				case MNT_BASE_SPRITEY:
 					if (!sprite_enabled)
 						break;
-					sprite_y = zdata + sprite_y_offset;
-					// vertically doubled mode
-					if (scalemode&2) sprite_y*=2;
-					video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
+					if (zaddr == MNT_BASE_SPRITEX) {
+						sprite_x = (int16_t)zdata + sprite_x_offset + 3;
+						sprite_x_adj = sprite_x;
+						// horizontally doubled mode
+						if (scalemode&1) sprite_x*=2;
+					}
+					else {
+						sprite_y = (int16_t)zdata + sprite_y_offset;
+						sprite_y_adj = sprite_y;
+						// vertically doubled mode
+						if (scalemode&2) sprite_y*=2;
+					}
+
+					if (sprite_x < 0 || sprite_y < 0) {
+						if ((sprite_x < 0 && sprite_clip_x != sprite_x) || (sprite_y < 0 && sprite_clip_y != sprite_y)) {
+							clip_hw_sprite((sprite_x < 0) ? sprite_x : 0, (sprite_y < 0) ? sprite_y : 0);
+						}
+						sprite_clipped = 1;
+						if (sprite_x < 0) {
+							sprite_x_adj = 0;
+							sprite_clip_x = sprite_x;
+						}
+						if (sprite_y < 0) {
+							sprite_y_adj = 0;
+							sprite_clip_y = sprite_y;
+						}
+					}
+					else if (sprite_clipped && sprite_x >= 0 && sprite_y >= 0) {
+						clip_hw_sprite(0, 0);
+						sprite_clipped = 0;
+					}
+					video_formatter_write((sprite_y_adj << 16) | sprite_x_adj, MNTVF_OP_SPRITE_XY);
 					break;
 				case MNT_BASE_RECTOP + 0x38: { // SPRITE_BITMAP
 					if (zdata == 1) { // Hardware sprite enabled
@@ -1218,7 +1240,7 @@ int main() {
 					uint8_t* bmp_data = (uint8_t*) ((u32) framebuffer
 							+ blitter_src_offset);
 
-					clear_hw_sprite(sprite_width, sprite_height);
+					clear_hw_sprite();
 					
 					sprite_x_offset = rect_x1;
 					sprite_y_offset = rect_y1;
