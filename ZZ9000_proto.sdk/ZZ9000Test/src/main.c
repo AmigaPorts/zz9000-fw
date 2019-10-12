@@ -1204,27 +1204,27 @@ int main() {
 						sprite_y_adj = sprite_y;
 						// vertically doubled mode
 						if (scalemode&2) sprite_y*=2;
-					}
 
-					if (sprite_x < 0 || sprite_y < 0) {
-						if ((sprite_x < 0 && sprite_clip_x != sprite_x) || (sprite_y < 0 && sprite_clip_y != sprite_y)) {
-							clip_hw_sprite((sprite_x < 0) ? sprite_x : 0, (sprite_y < 0) ? sprite_y : 0);
+						if (sprite_x < 0 || sprite_y < 0) {
+							if (sprite_clip_x != sprite_x || sprite_clip_y != sprite_y) {
+								clip_hw_sprite((sprite_x < 0) ? sprite_x : 0, (sprite_y < 0) ? sprite_y : 0);
+							}
+							sprite_clipped = 1;
+							if (sprite_x < 0) {
+								sprite_x_adj = 0;
+								sprite_clip_x = sprite_x;
+							}
+							if (sprite_y < 0) {
+								sprite_y_adj = 0;
+								sprite_clip_y = sprite_y;
+							}
 						}
-						sprite_clipped = 1;
-						if (sprite_x < 0) {
-							sprite_x_adj = 0;
-							sprite_clip_x = sprite_x;
+						else if (sprite_clipped && sprite_x >= 0 && sprite_y >= 0) {
+							clip_hw_sprite(0, 0);
+							sprite_clipped = 0;
 						}
-						if (sprite_y < 0) {
-							sprite_y_adj = 0;
-							sprite_clip_y = sprite_y;
-						}
+						video_formatter_write((sprite_y_adj << 16) | sprite_x_adj, MNTVF_OP_SPRITE_XY);
 					}
-					else if (sprite_clipped && sprite_x >= 0 && sprite_y >= 0) {
-						clip_hw_sprite(0, 0);
-						sprite_clipped = 0;
-					}
-					video_formatter_write((sprite_y_adj << 16) | sprite_x_adj, MNTVF_OP_SPRITE_XY);
 					break;
 				case MNT_BASE_RECTOP + 0x38: { // SPRITE_BITMAP
 					if (zdata == 1) { // Hardware sprite enabled

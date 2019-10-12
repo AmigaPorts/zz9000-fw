@@ -86,11 +86,13 @@ void clip_hw_sprite(int16_t offset_x, int16_t offset_y)
 	if (offset_y < 0)
 		yo = -offset_y;
 
-	clear_hw_sprite();
-	for (int y = 0; y < 48 - yo; y++) {
-		for (int x = 0; x < 32 - xo; x++) {
+	for (int y = 0; y < 48; y++) {
+		for (int x = 0; x < 32; x++) {
 			video_formatter_write((y * 32) + x, 14);
-			video_formatter_write(sprite_buf[((y + yo) * 32) + (x + xo)] & 0x00ffffff, 15);
+			if (x < 32 - xo && y < 48 - yo)
+				video_formatter_write(sprite_buf[((y + yo) * 32) + (x + xo)] & 0x00ffffff, 15);
+			else
+				video_formatter_write(0x00ff00ff, 15);
 		}
 	}
 }
