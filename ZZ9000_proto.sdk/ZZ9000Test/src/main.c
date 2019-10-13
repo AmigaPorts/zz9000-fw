@@ -1194,6 +1194,8 @@ int main() {
 					if (!sprite_enabled)
 						break;
 					if (zaddr == MNT_BASE_SPRITEX) {
+						// The "+#" offset at the end is dependent on implementation timing slack, and needs
+						// to be adjusted based on the sprite X offset produced by the current run.
 						sprite_x = (int16_t)zdata + sprite_x_offset + 3;
 						sprite_x_adj = sprite_x;
 						// horizontally doubled mode
@@ -1361,11 +1363,14 @@ int main() {
 					if (bpp == 0)
 						bpp = 1;
 					uint16_t loop_rows = 0;
+					mask = zdata;
 
 					if (zdata & 0x8000) {
 						// pattern mode
 						// TODO yoffset
 						loop_rows = zdata & 0xff;
+						mask = blitter_user1;
+						blitter_src_pitch = 16;
 					}
 
 					if (loop_rows > 0) {
@@ -1381,9 +1386,9 @@ int main() {
 						 printf("tmpl_data: %p\n", tmpl_data);
 						 printf("blitter_src_pitch: %d\n\n", blitter_src_pitch);*/
 					}
-
+					
 					pattern_fill_rect((blitter_colormode & 0x0F), rect_x1,
-							rect_y1, rect_x2, rect_y2, draw_mode, 0xff,
+							rect_y1, rect_x2, rect_y2, draw_mode, mask,
 							rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data,
 							blitter_src_pitch, loop_rows);
 					break;

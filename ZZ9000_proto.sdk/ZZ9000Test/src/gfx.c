@@ -129,7 +129,7 @@ void fill_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint3
 		switch(color_format) {
 			case MNTVA_COLOR_8BIT:
 				while(x < rect_x2) {
-					SET_FG_PIXEL8_MASK;
+					SET_FG_PIXEL8_MASK(0);
 					x++;
 				}
 				break;
@@ -356,7 +356,7 @@ void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t r
 		if(pattern & cur_bit) { \
 			if (!inversion) { \
 				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_FG_PIXEL; } \
-				else { SET_FG_PIXEL8_MASK } \
+				else { SET_FG_PIXEL8_MASK(0) } \
 			} \
 			else { INVERT_PIXEL; } \
 		} \
@@ -365,14 +365,14 @@ void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t r
 		if(pattern & cur_bit) { \
 			if (!inversion) { \
 				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_FG_PIXEL; } \
-				else { SET_FG_PIXEL8_MASK; } \
+				else { SET_FG_PIXEL8_MASK(0); } \
 			} \
 			else { INVERT_PIXEL; } /* JAM2 and complement is kind of useless, as it ends up being the same visual result as JAM1 and a pattern of 0xFFFF */ \
 		} \
 		else { \
 			if (!inversion) { \
 				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_BG_PIXEL; } \
-				else { SET_BG_PIXEL8_MASK; } \
+				else { SET_BG_PIXEL8_MASK(0); } \
 			} \
 			else { INVERT_PIXEL; } \
 		} \
@@ -665,13 +665,18 @@ void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1
 
 			while (x < rect_x2) {
 				if (cur_bit == 0x80 && x < rect_x2 - 8) {
-					SET_FG_PIXELS;
+					if (mask == 0xFF) {
+						SET_FG_PIXELS;
+					}
+					else {
+						SET_FG_PIXELS_MASK;
+					}
 					x += 8;
 				}
 				else {
 					while (cur_bit > 0 && x < rect_x2) {
 						if (cur_byte & cur_bit) {
-							SET_FG_PIXEL;
+							SET_FG_PIXEL_MASK;
 						}
 						x++;
 						cur_bit >>= 1;
@@ -693,16 +698,21 @@ void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1
 
 			while (x < rect_x2) {
 				if (cur_bit == 0x80 && x < rect_x2 - 8) {
-					SET_FG_OR_BG_PIXELS;
+					if (mask == 0xFF) {
+						SET_FG_OR_BG_PIXELS;
+					}
+					else {
+						SET_FG_OR_BG_PIXELS_MASK;
+					}
 					x += 8;
 				}
 				else {
 					while (cur_bit > 0 && x < rect_x2) {
 						if (cur_byte & cur_bit) {
-							SET_FG_PIXEL;
+							SET_FG_PIXEL_MASK;
 						}
 						else {
-							SET_BG_PIXEL;
+							SET_BG_PIXEL_MASK;
 						}
 						x++;
 						cur_bit >>= 1;
