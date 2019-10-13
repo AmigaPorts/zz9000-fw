@@ -1407,7 +1407,7 @@ int main() {
 					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
 							blitter_dst_pitch);
 
-					p2c_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+					p2c_rect(rect_x1, 0, rect_x2, rect_y2, rect_x3,
 							rect_y3, num_rows, draw_mode, planes, mask,
 							layer_mask, blitter_src_pitch, bmp_data);
 					break;

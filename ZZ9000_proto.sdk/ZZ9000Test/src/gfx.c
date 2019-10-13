@@ -527,8 +527,8 @@ void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 	uint8_t cur_bit, base_bit, base_byte;
 	uint16_t cur_byte = 0, error_printed = 0;
 
-	uint16_t plane_size = src_line_pitch * sh;
-	uint8_t *bmp_data = bmp_data_src + ((sy % sh) * src_line_pitch);
+	uint32_t plane_size = src_line_pitch * h;
+	uint8_t *bmp_data = bmp_data_src + ((sy % h) * src_line_pitch);
 
 	cur_bit = base_bit = (0x80 >> (sx % 8));
 	cur_byte = base_byte = ((sx / 8) % src_line_pitch);
@@ -604,7 +604,7 @@ void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 
 		}
 		dp += fb_pitch;
-		if ((line_y + sy + 1) % sh)
+		if ((line_y + sy + 1) % h)
 			bmp_data += src_line_pitch;
 		else
 			bmp_data = bmp_data_src;
