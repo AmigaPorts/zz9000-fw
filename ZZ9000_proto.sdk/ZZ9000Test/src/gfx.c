@@ -520,12 +520,39 @@ void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t 
 	}
 }
 
+#define DECODE_PLANAR_PIXEL(a) \
+	switch (planes) { \
+		case 8: if (layer_mask & 0x80 && bmp_data[(plane_size * 7) + cur_byte] & cur_bit) a |= 0x80; \
+		case 7: if (layer_mask & 0x40 && bmp_data[(plane_size * 6) + cur_byte] & cur_bit) a |= 0x40; \
+		case 6: if (layer_mask & 0x20 && bmp_data[(plane_size * 5) + cur_byte] & cur_bit) a |= 0x20; \
+		case 5: if (layer_mask & 0x10 && bmp_data[(plane_size * 4) + cur_byte] & cur_bit) a |= 0x10; \
+		case 4: if (layer_mask & 0x08 && bmp_data[(plane_size * 3) + cur_byte] & cur_bit) a |= 0x08; \
+		case 3: if (layer_mask & 0x04 && bmp_data[(plane_size * 2) + cur_byte] & cur_bit) a |= 0x04; \
+		case 2: if (layer_mask & 0x02 && bmp_data[plane_size + cur_byte] & cur_bit) a |= 0x02; \
+		case 1: if (layer_mask & 0x01 && bmp_data[cur_byte] & cur_bit) a |= 0x01; \
+			break; \
+	}
+
+#define DECODE_INVERTED_PLANAR_PIXEL(a) \
+	switch (planes) { \
+		case 8: if (layer_mask & 0x80 && (bmp_data[(plane_size * 7) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x80; \
+		case 7: if (layer_mask & 0x40 && (bmp_data[(plane_size * 6) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x40; \
+		case 6: if (layer_mask & 0x20 && (bmp_data[(plane_size * 5) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x20; \
+		case 5: if (layer_mask & 0x10 && (bmp_data[(plane_size * 4) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x10; \
+		case 4: if (layer_mask & 0x08 && (bmp_data[(plane_size * 3) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x08; \
+		case 3: if (layer_mask & 0x04 && (bmp_data[(plane_size * 2) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x04; \
+		case 2: if (layer_mask & 0x02 && (bmp_data[plane_size + cur_byte] ^ 0xFF) & cur_bit) a |= 0x02; \
+		case 1: if (layer_mask & 0x01 && (bmp_data[cur_byte] ^ 0xFF) & cur_bit) a |= 0x01; \
+			break; \
+	}
+
+#define cur_pixel u8_fg
 void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t h, uint16_t sh, uint8_t draw_mode, uint8_t planes, uint8_t mask, uint8_t layer_mask, uint16_t src_line_pitch, uint8_t *bmp_data_src)
 {
 	uint32_t *dp = fb + (dy * fb_pitch);
 
 	uint8_t cur_bit, base_bit, base_byte;
-	uint16_t cur_byte = 0, error_printed = 0;
+	uint16_t cur_byte = 0, cur_pixel = 0;
 
 	uint32_t plane_size = src_line_pitch * h;
 	uint8_t *bmp_data = bmp_data_src + ((sy % h) * src_line_pitch);
@@ -535,67 +562,68 @@ void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 
 	for (int16_t line_y = 0; line_y < h; line_y++) {
 		for (int16_t x = dx; x < dx + w; x++) {
+			cur_pixel = 0;
+			if (draw_mode & 0x01)
+				DECODE_INVERTED_PLANAR_PIXEL(cur_pixel)
+			else
+				DECODE_PLANAR_PIXEL(cur_pixel)
+			
+			if (mask == 0xFF && (draw_mode == 0x0C || draw_mode == 0x03)) {
+				((uint8_t *)dp)[x] = cur_pixel;
+				goto skip;
+			}
+
 			switch (draw_mode) {
+				case 0x01: // NOR
+					cur_pixel &= ~(((uint8_t *)dp)[x]);
+					SET_FG_PIXEL8_MASK(0);
+					break;
+				case 0x02: // ONLYDST
+					((uint8_t *)dp)[x] = ((uint8_t *)dp)[x] & ~(cur_pixel);
+					break;
+				case 0x03: // NOTSRC
+					SET_FG_PIXEL8_MASK(0);
+					break;
+				case 0x04: // ONLYSRC
+					cur_pixel &= (((uint8_t *)dp)[x] ^ 0xFF);
+					SET_FG_PIXEL8_MASK(0);
+					break;
 				case 0x05: // Invert destination
 					((uint8_t *)dp)[x] ^= 0xFF;
 					break;
-				case 0x0C: // Replace destination with source
-					((uint8_t *)dp)[x] = 0x00;
-					switch (planes) {
-						case 8:
-							if (layer_mask & 0x80 && bmp_data[(plane_size * 7) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x80;
-						case 7:
-							if (layer_mask & 0x40 && bmp_data[(plane_size * 6) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x40;
-						case 6:
-							if (layer_mask & 0x20 && bmp_data[(plane_size * 5) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x20;
-						case 5:
-							if (layer_mask & 0x10 && bmp_data[(plane_size * 4) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x10;
-						case 4:
-							if (layer_mask & 0x08 && bmp_data[(plane_size * 3) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x08;
-						case 3:
-							if (layer_mask & 0x04 && bmp_data[(plane_size * 2) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x04;
-						case 2:
-							if (layer_mask & 0x02 && bmp_data[plane_size + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x02;
-						case 1:
-							if (layer_mask & 0x01 && bmp_data[cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x01;
-							break;
-					}
+				case 0x06: // EOR
+					((uint8_t *)dp)[x] ^= cur_pixel;
 					break;
-				case 0x03: // Replace destination with inverted source
-					((uint8_t *)dp)[x] = 0x00;
-					switch (planes) {
-						case 8:
-							if (layer_mask & 0x80 && (bmp_data[(plane_size * 7) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x80;
-						case 7:
-							if (layer_mask & 0x40 && (bmp_data[(plane_size * 6) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x40;
-						case 6:
-							if (layer_mask & 0x20 && (bmp_data[(plane_size * 5) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x20;
-						case 5:
-							if (layer_mask & 0x10 && (bmp_data[(plane_size * 4) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x10;
-						case 4:
-							if (layer_mask & 0x08 && (bmp_data[(plane_size * 3) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x08;
-						case 3:
-							if (layer_mask & 0x04 && (bmp_data[(plane_size * 2) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x04;
-						case 2:
-							if (layer_mask & 0x02 && (bmp_data[plane_size + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x02;
-						case 1:
-							if (layer_mask & 0x01 && (bmp_data[cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x01;
-							break;
-					}
+				case 0x07: // NAND
+					cur_pixel = ~(((uint8_t *)dp)[x] & ~(cur_pixel)) & mask;
+					SET_FG_PIXEL8_MASK(0);
 					break;
-				default:
-					// TODO: Not all minterm modes are handled yet.
-					// Unhandled minterm draw mode. Pixels will be filled with a horribly ugly
-					// brown color to indicate that there's an issue. Also print an error over
-					// UART for easier debugging.
-					((uint8_t *)dp)[x] = draw_mode << 8;
-					if (!error_printed) {
-						printf ("p2c_rect: Unhandled draw mode %.2X.\n", draw_mode);
-						error_printed = 1;
-					}
+				case 0x08: // AND
+					cur_pixel &= ((uint8_t *)dp)[x];
+					SET_FG_PIXEL8_MASK(0);
+					break;
+				case 0x09: // NEOR
+					((uint8_t *)dp)[x] ^= (cur_pixel & mask);
+					break;
+				case 0x0A: // DST - this one does nothing.
+					return;
+					break;
+				case 0x0B: // NOTONLYSRC
+					((uint8_t *)dp)[x] |= (cur_pixel & mask);
+					break;
+				case 0x0C: // SRC
+					SET_FG_PIXEL8_MASK(0);
+					break;
+				case 0x0D: // NOTONLYDST
+					cur_pixel = ~(((uint8_t *)dp)[x] & cur_pixel) & mask;
+					SET_FG_PIXEL8_MASK(0);
+					break;
+				case 0x0E: // OR
+					((uint8_t *)dp)[x] |= (cur_pixel & mask);
 					break;
 			}
 
+			skip:;
 			if ((cur_bit >>= 1) == 0) {
 				cur_bit = 0x80;
 				cur_byte++;
@@ -612,8 +640,7 @@ void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 		cur_byte = base_byte;
 	}
 }
-
-// inspired by UAE code. needs cleanup / optimization
+#undef cur_pixel
 
 #define PATTERN_FILLRECT_LOOPX \
 	tmpl_x++; \
