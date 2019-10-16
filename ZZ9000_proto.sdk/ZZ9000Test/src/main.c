@@ -1413,6 +1413,25 @@ int main() {
 					break;
 				}
 
+				case MNT_BASE_RECTOP + 0x2c: {
+					// Rect P2D
+					uint8_t draw_mode = blitter_colormode >> 8;
+					uint8_t planes = (zdata & 0xFF00) >> 8;
+					uint8_t mask = (zdata & 0xFF);
+					uint16_t num_rows = blitter_user1;
+					uint8_t layer_mask = blitter_user2;
+					uint8_t* bmp_data = (uint8_t*) ((u32) framebuffer
+							+ blitter_src_offset);
+
+					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
+							blitter_dst_pitch);
+
+					p2d_rect(rect_x1, 0, rect_x2, rect_y2, rect_x3,
+							rect_y3, num_rows, draw_mode, planes, mask, layer_mask, rect_rgb,
+							blitter_src_pitch, bmp_data, (blitter_colormode & 0x0F));
+					break;
+				}
+
 				case MNT_BASE_RECTOP + 0x2a: {
 					// DrawLine
 					uint8_t draw_mode = blitter_colormode >> 8;

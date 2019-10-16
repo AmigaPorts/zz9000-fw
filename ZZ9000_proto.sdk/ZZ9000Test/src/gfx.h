@@ -49,6 +49,7 @@ void draw_line(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y
 void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t rect_y2, uint16_t len, uint32_t fg_color, uint32_t color_format);
 
 void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t h, uint16_t sh, uint8_t draw_mode, uint8_t planes, uint8_t mask, uint8_t layer_mask, uint16_t src_line_pitch, uint8_t *bmp_data_src);
+void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t h, uint16_t sh, uint8_t draw_mode, uint8_t planes, uint8_t mask, uint8_t layer_mask, uint32_t color_mask, uint16_t src_line_pitch, uint8_t *bmp_data_src, uint32_t color_format);
 void invert_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint8_t mask, uint32_t color_format);
 
 #define MNTVA_COLOR_8BIT     0
@@ -82,6 +83,10 @@ void invert_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uin
 	((uint8_t *)dp)[x + a] = u8_fg ^ (((uint8_t *)dp)[x + a] & (mask ^ 0xFF));
 #define SET_BG_PIXEL8_MASK(a) \
 	((uint8_t *)dp)[x + a] = u8_bg ^ (((uint8_t *)dp)[x + a] & (mask ^ 0xFF));
+#define SET_FG_PIXEL16_MASK(a) \
+	((uint16_t *)dp)[x + a] = fg_color ^ (((uint16_t *)dp)[x + a] & (color_mask ^ 0xFFFF));
+#define SET_FG_PIXEL32_MASK(a) \
+	dp[x + a] = fg_color ^ (dp[x + a] & (color_mask ^ 0xFFFFFFFF));
 
 #define SET_FG_PIXEL \
 	switch (color_format) { \
