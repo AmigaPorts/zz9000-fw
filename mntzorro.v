@@ -1074,11 +1074,16 @@ module MNTZorro_v0_1_S00_AXI
   reg [31:0] m00_axi_wdata_out;
   reg m00_axi_awvalid_out;
   reg m00_axi_wvalid_out;
-  
+
+  reg [31:0] m00_axi_awaddr_z3;
+  reg [31:0] m00_axi_wdata_z3;
+  reg m00_axi_awvalid_z3;
+  reg m00_axi_wvalid_z3;
+  reg [3:0] m00_axi_wstrb_z3;
+  reg z3_axi_write = 0;
+
+  // AXI DMA arbiter
   always @(posedge S_AXI_ACLK) begin
-    // VIDEOCAP
-    videocap_mode_sync <= videocap_mode;
-    
     m00_axi_awlen <= 'h0; // 1 burst (1 write)
     m00_axi_awsize <= 'h2; // 2^2 == 4 bytes
     m00_axi_awburst <= 'h0; // FIXED (non incrementing)
@@ -1088,9 +1093,36 @@ module MNTZorro_v0_1_S00_AXI
     m00_axi_awqos <= 'h0;
     m00_axi_wlast <= 'h1;
     m00_axi_bready <= 'h1;
-    
+
+    // TODO double check these
     m00_axi_awready_reg <= m00_axi_awready;
     m00_axi_wready_reg  <= m00_axi_wready;
+
+    if (z3_axi_write) begin
+      // zorro writes to DDR
+      m00_axi_awaddr  <= m00_axi_awaddr_z3;
+      m00_axi_wdata   <= m00_axi_wdata_z3;
+      m00_axi_awvalid <= m00_axi_awvalid_z3;
+      m00_axi_wvalid  <= m00_axi_wvalid_z3;
+      m00_axi_wstrb   <= m00_axi_wstrb_z3;
+    end if (videocap_mode_sync) begin
+      // videocap writes to DDR
+      m00_axi_awaddr  <= m00_axi_awaddr_out;
+      m00_axi_wdata   <= m00_axi_wdata_out;
+      m00_axi_awvalid <= m00_axi_awvalid_out;
+      m00_axi_wvalid  <= m00_axi_wvalid_out;
+      m00_axi_wstrb   <= 4'b1111;
+    end else begin
+      // idle
+      m00_axi_awvalid <= 0;
+      m00_axi_wvalid  <= 0;
+    end
+    
+  end
+    
+  always @(posedge S_AXI_ACLK) begin
+    // VIDEOCAP
+    videocap_mode_sync <= videocap_mode;
     
     videocap_save_x2 <= (videocap_save_x);
     videocap_save_x3 <= (videocap_save_x);
@@ -1108,12 +1140,6 @@ module MNTZorro_v0_1_S00_AXI
       m00_axi_wdata_out  <= videocap_buf[videocap_save_x3>>1];
     
     if (videocap_mode_sync) begin
-      m00_axi_awaddr  <= m00_axi_awaddr_out;
-      m00_axi_wdata   <= m00_axi_wdata_out;
-      m00_axi_awvalid <= m00_axi_awvalid_out;
-      m00_axi_wvalid  <= m00_axi_wvalid_out;
-      m00_axi_wstrb   <= 4'b1111;
-      
       // save newly captured line
       case (videocap_save_state)
         0:
@@ -1140,11 +1166,7 @@ module MNTZorro_v0_1_S00_AXI
           //end
         end
       endcase
-    end else begin
-      m00_axi_awvalid <= 0;
-      m00_axi_wvalid  <= 0;
     end
-    
   end
   
   // -- main zorro fsm ---------------------------------------------
@@ -1703,10 +1725,10 @@ module MNTZorro_v0_1_S00_AXI
           z3_ds3 <= ~znUDS_sync[1];
           
           if (~znDS0_sync[1]||~znDS1_sync[1]||~znLDS_sync[1]||~znUDS_sync[1]) begin
-            //if (z3_mapped_addr<'h10000 || videocap_mode)
-            zorro_state <= Z3_WRITE_PRE2;
-            //else
-            //  zorro_state <= WAIT_WRITE_DMA_Z3;
+            if (z3_mapped_addr<'h10000 || videocap_mode)
+              zorro_state <= Z3_WRITE_PRE2;
+            else
+              zorro_state <= WAIT_WRITE_DMA_Z3;
           end
         end
         
@@ -1739,28 +1761,37 @@ module MNTZorro_v0_1_S00_AXI
           end
         end
         
-        /*WAIT_WRITE_DMA_Z3: begin
-         m00_axi_wstrb <= {z3_ds0,z3_ds1,z3_ds2,z3_ds3};
-         // FIXME
-         m00_axi_awaddr <= (z3_mapped_addr&'h1ffffffc)+`ARM_MEMORY_START; // max 256MB
-         m00_axi_wdata  <= {z3_din_low_s2[7:0],z3_din_low_s2[15:8],z3_din_high_s2[7:0],z3_din_high_s2[15:8]};
-         m00_axi_awvalid <= 1;
-         m00_axi_wvalid  <= 1;
-         if (m00_axi_awready) begin  // TODO wready?
-         zorro_state <= WAIT_WRITE_DMA_Z3_FINALIZE;
+        WAIT_WRITE_DMA_Z3: begin
+          m00_axi_wstrb_z3 <= {z3_ds0,z3_ds1,z3_ds2,z3_ds3};
+          // TODO: work in progress
+          m00_axi_awaddr_z3 <= (z3_mapped_addr&'h1ffffffc)+`ARM_MEMORY_START; // max 256MB
+          m00_axi_wdata_z3  <= {z3_din_low_s2[7:0],z3_din_low_s2[15:8],z3_din_high_s2[7:0],z3_din_high_s2[15:8]};
+          m00_axi_awvalid_z3 <= 1;
+          m00_axi_wvalid_z3  <= 1;
+          z3_axi_write <= 1;
+          if (m00_axi_awready) begin
+            // TODO simulate this / proper handshake with arbiter
+            zorro_state <= WAIT_WRITE_DMA_Z3_FINALIZE;
+          end
         end
-      end*/
         
-        /*WAIT_WRITE_DMA_Z3_FINALIZE: begin
-         if (m00_axi_wready) begin
-         m00_axi_awvalid <= 0;
-         m00_axi_wvalid <= 0;
-         zorro_state <= Z3_ENDCYCLE;
-         //dtack <= 1; // CHECKME
+        WAIT_WRITE_DMA_Z3_FINALIZE: begin
+          // CHECKME i think it's not necessary to wait for wready
+          //if (m00_axi_wready) begin
+            m00_axi_awvalid_z3 <= 0;
+            m00_axi_wvalid_z3 <= 0;
+            zorro_state <= Z3_ENDCYCLE;
+            dtack <= 1; // CHECKME
+          //end
         end
-      end*/
         
         Z3_ENDCYCLE: begin
+          z3_axi_write <= 0;
+
+          // we're timing out or own dtack here. because of a zorro
+          // bug / subtlety, dtack can be sampled incorrectly to "hang over"
+          // into the next amiga zorro cycle.
+          // TODO: find the optimal value or make it user adjustable (the 10)
           read_counter <= read_counter + 1'b1;
           if (read_counter >= 10) begin
             dtack <= 0;
