@@ -1328,29 +1328,38 @@ int main() {
 								blitter_colormode, mask);
 					break;
 
-				case MNT_BASE_RECTOP + 0x14:
+				case MNT_BASE_RECTOP + 0x14: {
 					// copy rectangle
 					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
 							blitter_dst_pitch);
+					mask = (blitter_colormode >> 8);
 
 					switch (zdata) {
 					case 1: // Regular BlitRect
-						copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
-								rect_y3, blitter_colormode & 0x0F,
-								(uint32_t*) ((u32) framebuffer
-										+ blitter_dst_offset),
-								blitter_dst_pitch);
+						if (mask == 0xFF || (mask != 0xFF && (blitter_colormode & 0x0F)) != MNTVA_COLOR_8BIT)
+							copy_rect_nomask(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+											rect_y3, blitter_colormode & 0x0F,
+											(uint32_t*) ((u32) framebuffer
+													+ blitter_dst_offset),
+											blitter_dst_pitch);
+						else 
+							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+									rect_y3, blitter_colormode & 0x0F,
+									(uint32_t*) ((u32) framebuffer
+											+ blitter_dst_offset),
+									blitter_dst_pitch, mask);
 						break;
 					case 2: // BlitRectNoMaskComplete
-						copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
-								rect_y3, blitter_colormode & 0x0F,
-								(uint32_t*) ((u32) framebuffer
-										+ blitter_src_offset),
-								blitter_src_pitch);
+						copy_rect_nomask(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+										rect_y3, blitter_colormode & 0x0F,
+										(uint32_t*) ((u32) framebuffer
+												+ blitter_src_offset),
+										blitter_src_pitch);
 						break;
 					}
 					//Xil_DCacheFlush();
 					break;
+				}
 
 				case MNT_BASE_RECTOP + 0x16: {
 					uint8_t draw_mode = blitter_colormode >> 8;

@@ -227,7 +227,7 @@ void fill_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t 
 	}
 }
 
-void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch)
+void copy_rect_nomask(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch)
 {
 	uint32_t* dp = fb + (rect_y1 * fb_pitch);
 	uint32_t* sp = sp_src + (rect_sy * src_pitch);
@@ -267,6 +267,42 @@ void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint1
 				else
 					memmove(dp + rect_x1, sp + rect_sx, w * 4);
 				break;
+		}
+		dp += line_step_d;
+		sp += line_step_s;
+	}
+}
+
+void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch, uint8_t mask)
+{
+	uint32_t* dp = fb + (rect_y1 * fb_pitch);
+	uint32_t* sp = sp_src + (rect_sy * src_pitch);
+	uint16_t rect_y2 = rect_y1 + h - 1;//, rect_x2 = rect_x1 + h - 1;
+
+	int32_t line_step_d = fb_pitch, line_step_s = src_pitch;
+	int8_t x_reverse = 0;
+
+	if (rect_sy < rect_y1) {
+		line_step_d = -fb_pitch;
+		dp = fb + (rect_y2 * fb_pitch);
+		line_step_s = -src_pitch;
+		sp = sp_src + ((rect_sy + h - 1) * src_pitch);
+	}
+
+	if (rect_sx < rect_x1) {
+		x_reverse = 1;
+	}
+
+	for (uint16_t y_line = 0; y_line < h; y_line++) {
+		if (x_reverse) {
+			for (int16_t x = w; x >= 0; x--) {
+				((uint8_t *)dp)[rect_x1 + x] = (((uint8_t *)dp)[rect_x1 + x] & (mask ^ 0xFF)) | (((uint8_t *)sp)[rect_sx + x] & mask);
+			}
+		}
+		else {
+			for (int16_t x = 0; x < w; x++) {
+				((uint8_t *)dp)[rect_x1 + x] = (((uint8_t *)dp)[rect_x1 + x] & (mask ^ 0xFF)) | (((uint8_t *)sp)[rect_sx + x] & mask);
+			}
 		}
 		dp += line_step_d;
 		sp += line_step_s;
