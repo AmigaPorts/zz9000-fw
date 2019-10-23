@@ -582,13 +582,12 @@ void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t 
 			break; \
 	}
 
-#define cur_pixel u8_fg
 void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t h, uint16_t sh, uint8_t draw_mode, uint8_t planes, uint8_t mask, uint8_t layer_mask, uint16_t src_line_pitch, uint8_t *bmp_data_src)
 {
 	uint32_t *dp = fb + (dy * fb_pitch);
 
 	uint8_t cur_bit, base_bit, base_byte;
-	uint16_t cur_byte = 0, cur_pixel = 0;
+	uint16_t cur_byte = 0, u8_fg = 0;
 
 	uint32_t plane_size = src_line_pitch * h;
 	uint8_t *bmp_data = bmp_data_src;
@@ -598,64 +597,64 @@ void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 
 	for (int16_t line_y = 0; line_y < h; line_y++) {
 		for (int16_t x = dx; x < dx + w; x++) {
-			cur_pixel = 0;
-			if (draw_mode & 0x01)
-				DECODE_INVERTED_PLANAR_PIXEL(cur_pixel)
+			u8_fg = 0;
+			if (draw_mode & 0x01) // If bit 1 is set, the inverted planar data is always used.
+				DECODE_INVERTED_PLANAR_PIXEL(u8_fg)
 			else
-				DECODE_PLANAR_PIXEL(cur_pixel)
+				DECODE_PLANAR_PIXEL(u8_fg)
 			
-			if (mask == 0xFF && (draw_mode == 0x0C || draw_mode == 0x03)) {
-				((uint8_t *)dp)[x] = cur_pixel;
+			if (mask == 0xFF && (draw_mode == MINTERM_SRC || draw_mode == MINTERM_NOTSRC)) {
+				((uint8_t *)dp)[x] = u8_fg;
 				goto skip;
 			}
 
 			switch (draw_mode) {
-				case 0x01: // NOR
-					cur_pixel &= ~(((uint8_t *)dp)[x]);
+				case MINTERM_NOR:
+					u8_fg &= ~(((uint8_t *)dp)[x]);
 					SET_FG_PIXEL8_MASK(0);
 					break;
-				case 0x02: // ONLYDST
-					((uint8_t *)dp)[x] = ((uint8_t *)dp)[x] & ~(cur_pixel);
+				case MINTERM_ONLYDST:
+					((uint8_t *)dp)[x] = ((uint8_t *)dp)[x] & ~(u8_fg);
 					break;
-				case 0x03: // NOTSRC
+				case MINTERM_NOTSRC:
 					SET_FG_PIXEL8_MASK(0);
 					break;
-				case 0x04: // ONLYSRC
-					cur_pixel &= (((uint8_t *)dp)[x] ^ 0xFF);
+				case MINTERM_ONLYSRC:
+					u8_fg &= (((uint8_t *)dp)[x] ^ 0xFF);
 					SET_FG_PIXEL8_MASK(0);
 					break;
-				case 0x05: // Invert destination
+				case MINTERM_INVERT:
 					((uint8_t *)dp)[x] ^= 0xFF;
 					break;
-				case 0x06: // EOR
-					((uint8_t *)dp)[x] ^= cur_pixel;
+				case MINTERM_EOR:
+					((uint8_t *)dp)[x] ^= u8_fg;
 					break;
-				case 0x07: // NAND
-					cur_pixel = ~(((uint8_t *)dp)[x] & ~(cur_pixel)) & mask;
+				case MINTERM_NAND:
+					u8_fg = ~(((uint8_t *)dp)[x] & ~(u8_fg)) & mask;
 					SET_FG_PIXEL8_MASK(0);
 					break;
-				case 0x08: // AND
-					cur_pixel &= ((uint8_t *)dp)[x];
+				case MINTERM_AND:
+					u8_fg &= ((uint8_t *)dp)[x];
 					SET_FG_PIXEL8_MASK(0);
 					break;
-				case 0x09: // NEOR
-					((uint8_t *)dp)[x] ^= (cur_pixel & mask);
+				case MINTERM_NEOR:
+					((uint8_t *)dp)[x] ^= (u8_fg & mask);
 					break;
-				case 0x0A: // DST - this one does nothing.
+				case MINTERM_DST: // This one does nothing.
 					return;
 					break;
-				case 0x0B: // NOTONLYSRC
-					((uint8_t *)dp)[x] |= (cur_pixel & mask);
+				case MINTERM_NOTONLYSRC:
+					((uint8_t *)dp)[x] |= (u8_fg & mask);
 					break;
-				case 0x0C: // SRC
+				case MINTERM_SRC:
 					SET_FG_PIXEL8_MASK(0);
 					break;
-				case 0x0D: // NOTONLYDST
-					cur_pixel = ~(((uint8_t *)dp)[x] & cur_pixel) & mask;
+				case MINTERM_NOTONLYDST:
+					u8_fg = ~(((uint8_t *)dp)[x] & u8_fg) & mask;
 					SET_FG_PIXEL8_MASK(0);
 					break;
-				case 0x0E: // OR
-					((uint8_t *)dp)[x] |= (cur_pixel & mask);
+				case MINTERM_OR:
+					((uint8_t *)dp)[x] |= (u8_fg & mask);
 					break;
 			}
 
@@ -676,7 +675,6 @@ void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 		cur_byte = base_byte;
 	}
 }
-#undef cur_pixel
 
 void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t h, uint16_t sh, uint8_t draw_mode, uint8_t planes, uint8_t mask, uint8_t layer_mask, uint32_t color_mask, uint16_t src_line_pitch, uint8_t *bmp_data_src, uint32_t color_format)
 {
@@ -715,7 +713,7 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 			}
 
 			switch (draw_mode) {
-				case 0x01: // NOR
+				case MINTERM_NOR:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							fg_color &= ~(((uint16_t *)dp)[x]);
@@ -727,7 +725,7 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 							break;
 					}
 					break;
-				case 0x02: // ONLYDST
+				case MINTERM_ONLYDST:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							fg_color &= ((uint16_t *)dp)[x];
@@ -738,7 +736,7 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 							break;
 					}
 					break;
-				case 0x04: // ONLYSRC
+				case MINTERM_ONLYSRC:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							fg_color &= (((uint16_t *)dp)[x] ^ 0xFFFF);
@@ -750,7 +748,7 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 							break;
 					}
 					break;
-				case 0x05: // Invert destination
+				case MINTERM_INVERT:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							((uint16_t *)dp)[x] ^= 0xFFFF;
@@ -760,7 +758,7 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 							break;
 					}
 					break;
-				case 0x06: // EOR
+				case MINTERM_EOR:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							((uint16_t *)dp)[x] ^= fg_color;
@@ -770,7 +768,7 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 							break;
 					}
 					break;
-				case 0x07: // NAND
+				case MINTERM_NAND:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							fg_color = ~(((uint16_t *)dp)[x] | ~(fg_color)) & color_mask;
@@ -782,7 +780,7 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 							break;
 					}
 					break;
-				case 0x08: // AND
+				case MINTERM_AND:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							fg_color &= ((uint16_t *)dp)[x];
@@ -794,7 +792,7 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 							break;
 					}
 					break;
-				case 0x09: // NEOR
+				case MINTERM_NEOR:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							((uint16_t *)dp)[x] ^= (fg_color & color_mask);
@@ -804,10 +802,10 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 							break;
 					}
 					break;
-				case 0x0A: // DST - this one does nothing.
+				case MINTERM_DST: // This one does nothing.
 					return;
 					break;
-				case 0x0B: // NOTONLYSRC
+				case MINTERM_NOTONLYSRC:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							((uint16_t *)dp)[x] |= (fg_color & color_mask);
@@ -817,8 +815,8 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 							break;
 					}
 					break;
-				case 0x03: // NOTSRC
-				case 0x0C: // SRC
+				case MINTERM_NOTSRC:
+				case MINTERM_SRC:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							SET_FG_PIXEL16_MASK(0);
@@ -828,7 +826,7 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 							break;
 					}
 					break;
-				case 0x0D: // NOTONLYDST
+				case MINTERM_NOTONLYDST:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							((uint16_t *)dp)[x] = ~(((uint16_t *)dp)[x] & fg_color) & color_mask;
@@ -840,7 +838,7 @@ void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 							break;
 					}
 					break;
-				case 0x0E: // OR
+				case MINTERM_OR:
 					switch (color_format) {
 						case MNTVA_COLOR_16BIT565:
 							((uint16_t *)dp)[x] |= (fg_color & color_mask);

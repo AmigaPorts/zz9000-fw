@@ -65,6 +65,26 @@ void invert_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uin
 #define COMPLEMENT  2	      /* XOR bits into raster */
 #define INVERSVID   4	      /* inverse video for drawing modes */
 
+// Graphics minterm drawing modes
+enum gfx_minterm_modes {
+	MINTERM_FALSE,
+	MINTERM_NOR,
+	MINTERM_ONLYDST,
+	MINTERM_NOTSRC,
+	MINTERM_ONLYSRC,
+	MINTERM_INVERT,
+	MINTERM_EOR,
+	MINTERM_NAND,
+	MINTERM_AND,
+	MINTERM_NEOR,
+	MINTERM_DST,
+	MINTERM_NOTONLYSRC,
+	MINTERM_SRC,
+	MINTERM_NOTONLYDST,
+	MINTERM_OR,
+	MINTERM_TRUE,
+};
+
 /* Macros for keeping gfx.c a bit more tidy */
 #define SET_FG_PIXEL8(a) \
 	((uint8_t *)dp)[x+a] = u8_fg;
