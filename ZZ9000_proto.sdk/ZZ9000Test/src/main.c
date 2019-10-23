@@ -1341,7 +1341,7 @@ int main() {
 											rect_y3, blitter_colormode & 0x0F,
 											(uint32_t*) ((u32) framebuffer
 													+ blitter_dst_offset),
-											blitter_dst_pitch);
+											blitter_dst_pitch, MINTERM_SRC);
 						else 
 							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
 									rect_y3, blitter_colormode & 0x0F,
@@ -1354,7 +1354,7 @@ int main() {
 										rect_y3, blitter_colormode & 0x0F,
 										(uint32_t*) ((u32) framebuffer
 												+ blitter_src_offset),
-										blitter_src_pitch);
+										blitter_src_pitch, mask); // Mask in this case is minterm/opcode.
 						break;
 					}
 					//Xil_DCacheFlush();

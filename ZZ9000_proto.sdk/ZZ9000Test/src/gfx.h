@@ -34,7 +34,7 @@ void fill_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t 
 void fill_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint32_t rect_rgb);
 
 void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch, uint8_t mask);
-void copy_rect_nomask(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch);
+void copy_rect_nomask(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch, uint8_t draw_mode);
 void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy);
 void copy_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy);
 void copy_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2, uint16_t rect_sx, uint16_t rect_sy);
@@ -347,4 +347,142 @@ enum gfx_minterm_modes {
 			if (cur_byte & 0x02) dp[x+6] ^= 0xFFFFFFFF; \
 			if (cur_byte & 0x01) dp[x+7] ^= 0xFFFFFFFF; \
 			break; \
+	}
+
+#define HANDLE_MINTERM_PIXEL_8(s, d) \
+	switch(draw_mode) {\
+		case MINTERM_NOR: \
+			s &= ~(d); \
+			SET_FG_PIXEL8_MASK(0); break; \
+		case MINTERM_ONLYDST: \
+			d = d & ~(s); break; \
+		case MINTERM_NOTSRC: \
+			SET_FG_PIXEL8_MASK(0); break; \
+		case MINTERM_ONLYSRC: \
+			s &= (d ^ 0xFF); \
+			SET_FG_PIXEL8_MASK(0); break; \
+		case MINTERM_INVERT: \
+			d ^= 0xFF; break; \
+		case MINTERM_EOR: \
+			d ^= s; break; \
+		case MINTERM_NAND: \
+			s = ~(d & ~(s)) & mask; \
+			SET_FG_PIXEL8_MASK(0); break; \
+		case MINTERM_AND: \
+			s &= d; \
+			SET_FG_PIXEL8_MASK(0); break; \
+		case MINTERM_NEOR: \
+			d ^= (s & mask); break; \
+		case MINTERM_DST: /* This one does nothing. */ \
+			return; break; \
+		case MINTERM_NOTONLYSRC: \
+			d |= (s & mask); break; \
+		case MINTERM_SRC: \
+			SET_FG_PIXEL8_MASK(0); break; \
+		case MINTERM_NOTONLYDST: \
+			s = ~(d & s) & mask; \
+			SET_FG_PIXEL8_MASK(0); break; \
+		case MINTERM_OR: \
+			d |= (s & mask); break; \
+	}
+
+#define HANDLE_MINTERM_PIXEL_16_32(s, d) \
+	switch (draw_mode) { \
+		case MINTERM_NOR: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					s &= ~(((uint16_t *)d)[x]); \
+					SET_FG_PIXEL16_MASK(0); break; \
+				case MNTVA_COLOR_32BIT: \
+					s &= ~(d[x]); \
+					SET_FG_PIXEL32_MASK(0); break; \
+			} break; \
+		case MINTERM_ONLYDST: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					((uint16_t *)d)[x] = ((uint16_t *)d)[x] & ~(s); break; \
+				case MNTVA_COLOR_32BIT: \
+					d[x] = d[x] & ~(s); break; \
+			} break; \
+		case MINTERM_ONLYSRC: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					s &= (((uint16_t *)d)[x] ^ 0xFFFF); \
+					SET_FG_PIXEL16_MASK(0); break; \
+				case MNTVA_COLOR_32BIT: \
+					s &= (d[x] ^ 0x00FFFFFF); \
+					SET_FG_PIXEL32_MASK(0); break; \
+			} break; \
+		case MINTERM_INVERT: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					((uint16_t *)d)[x] ^= 0xFFFF; break; \
+				case MNTVA_COLOR_32BIT: \
+					d[x] ^= 0x00FFFFFF; break; \
+			} break; \
+		case MINTERM_EOR: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					((uint16_t *)d)[x] ^= s; break; \
+				case MNTVA_COLOR_32BIT: \
+					d[x] ^= s; break; \
+			} break; \
+		case MINTERM_NAND: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					s = ~(((uint16_t *)d)[x] | ~(s)) & color_mask; \
+					SET_FG_PIXEL16_MASK(0); break; \
+				case MNTVA_COLOR_32BIT: \
+					s = ~(d[x] | ~(s)) & color_mask; \
+					SET_FG_PIXEL32_MASK(0); break; \
+			} break; \
+		case MINTERM_AND: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					s &= ((uint16_t *)d)[x]; \
+					SET_FG_PIXEL16_MASK(0); break; \
+				case MNTVA_COLOR_32BIT: \
+					s &= d[x]; \
+					SET_FG_PIXEL32_MASK(0); break; \
+			} break; \
+		case MINTERM_NEOR: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					((uint16_t *)d)[x] ^= (s & color_mask); break; \
+				case MNTVA_COLOR_32BIT: \
+					d[x] ^= (s & color_mask); break; \
+			} break; \
+		case MINTERM_DST: /* This one does nothing. */ \
+			return; break; \
+		case MINTERM_NOTONLYSRC: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					((uint16_t *)d)[x] |= (s & color_mask); break; \
+				case MNTVA_COLOR_32BIT: \
+					d[x] |= (s & color_mask); break; \
+			} break; \
+		case MINTERM_NOTSRC: \
+		case MINTERM_SRC: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					SET_FG_PIXEL16_MASK(0); break; \
+				case MNTVA_COLOR_32BIT: \
+					SET_FG_PIXEL32_MASK(0); break; \
+			} break; \
+		case MINTERM_NOTONLYDST: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					((uint16_t *)d)[x] = ~(((uint16_t *)d)[x] & s) & color_mask; \
+					SET_FG_PIXEL16_MASK(0); break; \
+				case MNTVA_COLOR_32BIT: \
+					d[x] = ~(d[x] & s) & color_mask; \
+					SET_FG_PIXEL32_MASK(0); break; \
+			} break; \
+		case MINTERM_OR: \
+			switch (color_format) { \
+				case MNTVA_COLOR_16BIT565: \
+					((uint16_t *)d)[x] |= (s & color_mask); break; \
+				case MNTVA_COLOR_32BIT: \
+					d[x] |= (s & color_mask); break; \
+			} break; \
 	}
