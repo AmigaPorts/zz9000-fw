@@ -27,7 +27,7 @@
 `define AUTOCONF_LOW  24'he80000
 `define AUTOCONF_HIGH 24'he80080
 `define Z3_RAM_SIZE 32'h10000000 // 256MB for Zorro 3
-`define ARM_MEMORY_START 32'h00200000
+`define ARM_MEMORY_START 32'h001f0000
 `define VIDEOCAP_ADDR 32'h01000000 // ARM_MEMORY_START+0xe0_0000
 
 `define C_M00_AXI_TARGET_SLAVE_BASE_ADDR 32'h10000000
@@ -1105,7 +1105,7 @@ module MNTZorro_v0_1_S00_AXI
       m00_axi_awvalid <= m00_axi_awvalid_z3;
       m00_axi_wvalid  <= m00_axi_wvalid_z3;
       m00_axi_wstrb   <= m00_axi_wstrb_z3;
-    end if (videocap_mode_sync) begin
+    end else if (videocap_mode_sync) begin
       // videocap writes to DDR
       m00_axi_awaddr  <= m00_axi_awaddr_out;
       m00_axi_wdata   <= m00_axi_wdata_out;
@@ -1725,10 +1725,7 @@ module MNTZorro_v0_1_S00_AXI
           z3_ds3 <= ~znUDS_sync[1];
           
           if (~znDS0_sync[1]||~znDS1_sync[1]||~znLDS_sync[1]||~znUDS_sync[1]) begin
-            if (z3_mapped_addr<'h10000 || videocap_mode)
-              zorro_state <= Z3_WRITE_PRE2;
-            else
-              zorro_state <= WAIT_WRITE_DMA_Z3;
+            zorro_state <= Z3_WRITE_PRE2;
           end
         end
         
@@ -1738,8 +1735,11 @@ module MNTZorro_v0_1_S00_AXI
           z3_ds1 <= ~znDS1_sync[1];
           z3_ds2 <= ~znLDS_sync[1];
           z3_ds3 <= ~znUDS_sync[1];
-          
-          zorro_state <= Z3_WRITE_UPPER;
+        
+          if (z3_mapped_addr<'h10000 || videocap_mode)
+            zorro_state <= Z3_WRITE_UPPER;
+          else
+            zorro_state <= WAIT_WRITE_DMA_Z3;
         end
         
         Z3_WRITE_UPPER: begin
@@ -1762,27 +1762,24 @@ module MNTZorro_v0_1_S00_AXI
         end
         
         WAIT_WRITE_DMA_Z3: begin
-          m00_axi_wstrb_z3 <= {z3_ds0,z3_ds1,z3_ds2,z3_ds3};
-          // TODO: work in progress
-          m00_axi_awaddr_z3 <= (z3_mapped_addr&'h1ffffffc)+`ARM_MEMORY_START; // max 256MB
-          m00_axi_wdata_z3  <= {z3_din_low_s2[7:0],z3_din_low_s2[15:8],z3_din_high_s2[7:0],z3_din_high_s2[15:8]};
+          // TODO simulate this / proper handshake with arbiter
+          m00_axi_wstrb_z3   <= {z3_ds0,z3_ds1,z3_ds2,z3_ds3};
+          m00_axi_awaddr_z3  <= z3_mapped_addr + `ARM_MEMORY_START; // max 256MB
+          m00_axi_wdata_z3   <= {z3_din_low_s2[7:0],z3_din_low_s2[15:8],z3_din_high_s2[7:0],z3_din_high_s2[15:8]};
           m00_axi_awvalid_z3 <= 1;
           m00_axi_wvalid_z3  <= 1;
           z3_axi_write <= 1;
-          if (m00_axi_awready) begin
-            // TODO simulate this / proper handshake with arbiter
-            zorro_state <= WAIT_WRITE_DMA_Z3_FINALIZE;
-          end
+          zorro_state <= WAIT_WRITE_DMA_Z3_FINALIZE;
         end
         
         WAIT_WRITE_DMA_Z3_FINALIZE: begin
-          // CHECKME i think it's not necessary to wait for wready
-          //if (m00_axi_wready) begin
+          if (m00_axi_awready_reg) begin
             m00_axi_awvalid_z3 <= 0;
             m00_axi_wvalid_z3 <= 0;
             zorro_state <= Z3_ENDCYCLE;
-            dtack <= 1; // CHECKME
-          //end
+            dtack <= 1;
+            slaven <= 0;
+          end
         end
         
         Z3_ENDCYCLE: begin
