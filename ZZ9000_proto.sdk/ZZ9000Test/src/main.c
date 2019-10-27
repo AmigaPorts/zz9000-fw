@@ -1380,26 +1380,18 @@ int main() {
 						loop_rows = zdata & 0xff;
 						mask = blitter_user1;
 						blitter_src_pitch = 16;
+						pattern_fill_rect((blitter_colormode & 0x0F), rect_x1,
+								rect_y1, rect_x2, rect_y2, draw_mode, mask,
+								rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data,
+								blitter_src_pitch, loop_rows);
 					}
-
-					if (loop_rows > 0) {
-						/*printf("fill_template:\n====================\n");
-						 printf("bpp: %d\n", bpp);
-						 printf("loop_rows: %d\n", loop_rows);
-						 printf("x:y1 - x:y2 %d:%d - %d:%d\n", rect_x1, rect_y1, rect_x2, rect_y2);
-						 printf("draw_mode: %d\n", draw_mode);
-						 printf("rect_rgb: %lx\n", rect_rgb);
-						 printf("rect_rgb2: %lx\n", rect_rgb2);
-						 printf("rect_x3: %d\n", rect_x3);
-						 printf("rect_y3: %d\n", rect_y3);
-						 printf("tmpl_data: %p\n", tmpl_data);
-						 printf("blitter_src_pitch: %d\n\n", blitter_src_pitch);*/
+					else {
+						template_fill_rect((blitter_colormode & 0x0F), rect_x1,
+								rect_y1, rect_x2, rect_y2, draw_mode, mask,
+								rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data,
+								blitter_src_pitch);
 					}
 					
-					pattern_fill_rect((blitter_colormode & 0x0F), rect_x1,
-							rect_y1, rect_x2, rect_y2, draw_mode, mask,
-							rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data,
-							blitter_src_pitch, loop_rows);
 					break;
 				}
 

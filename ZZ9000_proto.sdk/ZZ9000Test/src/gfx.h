@@ -41,6 +41,10 @@ void copy_rect32(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t 
 
 void fill_template(uint32_t bpp, uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t rect_y2,
 		uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color, uint16_t x_offset, uint16_t y_offset, uint8_t* tmpl_data, uint16_t templ_pitch, uint16_t loop_rows);
+void template_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h,
+	uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color,
+	uint16_t x_offset, uint16_t y_offset,
+	uint8_t *tmpl_data, uint16_t tmpl_pitch);
 void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h,
 	uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color,
 	uint16_t x_offset, uint16_t y_offset,
