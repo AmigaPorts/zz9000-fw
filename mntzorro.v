@@ -106,7 +106,7 @@ module MNTZorro_v0_1_S00_AXI
    // write address channel
    input wire m00_axi_awready,
    //output reg [C_M00_AXI_ID_WIDTH-1 : 0] m00_axi_awid,
-   output reg [`C_M00_AXI_ADDR_WIDTH-1 : 0] m00_axi_awaddr,
+   output wire [`C_M00_AXI_ADDR_WIDTH-1 : 0] m00_axi_awaddr,
    output reg [7:0] m00_axi_awlen,
    output reg [2:0] m00_axi_awsize,
    output reg [1:0] m00_axi_awburst,
@@ -114,15 +114,15 @@ module MNTZorro_v0_1_S00_AXI
    output reg [3:0] m00_axi_awcache,
    output reg [2:0] m00_axi_awprot,
    output reg [3:0] m00_axi_awqos,
-   output reg m00_axi_awvalid,
+   output wire m00_axi_awvalid,
   
    // write channel
    input wire m00_axi_wready,
    //output reg [C_M00_AXI_ID_WIDTH-1 : 0] m00_axi_wid,
-   output reg [`C_M00_AXI_DATA_WIDTH-1 : 0] m00_axi_wdata,
-   output reg [`C_M00_AXI_DATA_WIDTH/8-1 : 0] m00_axi_wstrb,
+   output wire [`C_M00_AXI_DATA_WIDTH-1 : 0] m00_axi_wdata,
+   output wire [`C_M00_AXI_DATA_WIDTH/8-1 : 0] m00_axi_wstrb,
    output reg m00_axi_wlast,
-   output reg m00_axi_wvalid,
+   output wire m00_axi_wvalid,
   
    // buffered write response channel
    //input wire [C_M00_AXI_ID_WIDTH-1 : 0] m00_axi_bid,
@@ -857,6 +857,8 @@ module MNTZorro_v0_1_S00_AXI
   localparam Z3_REGWRITE_PRE = 49;
   localparam Z3_REGREAD_PRE = 50;
   localparam Z3_WRITE_PRE2 = 51;
+  localparam WAIT_WRITE_DMA_Z3B = 52;
+  localparam WAIT_WRITE_DMA_Z3C = 53;
   
   (* mark_debug = "true" *) reg [7:0] zorro_state = COLD;
   reg zorro_idle = 0;
@@ -1077,11 +1079,25 @@ module MNTZorro_v0_1_S00_AXI
 
   reg [31:0] m00_axi_awaddr_z3;
   reg [31:0] m00_axi_wdata_z3;
-  reg m00_axi_awvalid_z3;
-  reg m00_axi_wvalid_z3;
+  reg m00_axi_awvalid_z3 = 0;
+  reg m00_axi_wvalid_z3 = 0;
   reg [3:0] m00_axi_wstrb_z3;
   reg z3_axi_write = 0;
-
+  
+  assign m00_axi_awaddr  = (z3_axi_write ? m00_axi_awaddr_z3 : m00_axi_awaddr_out);
+  assign m00_axi_awvalid = (z3_axi_write ? m00_axi_awvalid_z3 : m00_axi_awvalid_out);
+  assign m00_axi_wdata   = (z3_axi_write ? m00_axi_wdata_z3 : m00_axi_wdata_out);
+  assign m00_axi_wstrb   = (z3_axi_write ? m00_axi_wstrb_z3 : 4'b1111);
+  assign m00_axi_wvalid  = (z3_axi_write ? m00_axi_wvalid_z3 : m00_axi_wvalid_out);
+  
+  // when bypassing videocap:
+  /*assign m00_axi_awaddr  = m00_axi_awaddr_z3;
+  assign m00_axi_awvalid = m00_axi_awvalid_z3;
+  assign m00_axi_wdata   = m00_axi_wdata_z3;
+  assign m00_axi_wstrb   = m00_axi_wstrb_z3;
+  assign m00_axi_wvalid  = m00_axi_wvalid_z3;*/
+  
+  // FIXME i think this process can be dissolved
   // AXI DMA arbiter
   always @(posedge S_AXI_ACLK) begin
     m00_axi_awlen <= 'h0; // 1 burst (1 write)
@@ -1093,31 +1109,6 @@ module MNTZorro_v0_1_S00_AXI
     m00_axi_awqos <= 'h0;
     m00_axi_wlast <= 'h1;
     m00_axi_bready <= 'h1;
-
-    // TODO double check these
-    m00_axi_awready_reg <= m00_axi_awready;
-    m00_axi_wready_reg  <= m00_axi_wready;
-
-    if (z3_axi_write) begin
-      // zorro writes to DDR
-      m00_axi_awaddr  <= m00_axi_awaddr_z3;
-      m00_axi_wdata   <= m00_axi_wdata_z3;
-      m00_axi_awvalid <= m00_axi_awvalid_z3;
-      m00_axi_wvalid  <= m00_axi_wvalid_z3;
-      m00_axi_wstrb   <= m00_axi_wstrb_z3;
-    end else if (videocap_mode_sync) begin
-      // videocap writes to DDR
-      m00_axi_awaddr  <= m00_axi_awaddr_out;
-      m00_axi_wdata   <= m00_axi_wdata_out;
-      m00_axi_awvalid <= m00_axi_awvalid_out;
-      m00_axi_wvalid  <= m00_axi_wvalid_out;
-      m00_axi_wstrb   <= 4'b1111;
-    end else begin
-      // idle
-      m00_axi_awvalid <= 0;
-      m00_axi_wvalid  <= 0;
-    end
-    
   end
     
   always @(posedge S_AXI_ACLK) begin
@@ -1762,28 +1753,36 @@ module MNTZorro_v0_1_S00_AXI
         end
         
         WAIT_WRITE_DMA_Z3: begin
-          // TODO simulate this / proper handshake with arbiter
-          m00_axi_wstrb_z3   <= {z3_ds0,z3_ds1,z3_ds2,z3_ds3};
-          m00_axi_awaddr_z3  <= z3_mapped_addr + `ARM_MEMORY_START; // max 256MB
-          m00_axi_wdata_z3   <= {z3_din_low_s2[7:0],z3_din_low_s2[15:8],z3_din_high_s2[7:0],z3_din_high_s2[15:8]};
-          m00_axi_awvalid_z3 <= 1;
-          m00_axi_wvalid_z3  <= 1;
           z3_axi_write <= 1;
-          zorro_state <= WAIT_WRITE_DMA_Z3_FINALIZE;
+          
+          m00_axi_wstrb_z3   <= {z3_ds0, z3_ds1, z3_ds2, z3_ds3};
+          m00_axi_awaddr_z3  <= `ARM_MEMORY_START + (z3_mapped_addr/*&32'hfffffffc*/); // max 256MB
+          m00_axi_wdata_z3   <= {z3_din_low_s2[7:0], z3_din_low_s2[15:8], z3_din_high_s2[7:0], z3_din_high_s2[15:8]};
+          
+          m00_axi_awvalid_z3  <= 1;
+          if (m00_axi_awready) begin
+            zorro_state <= WAIT_WRITE_DMA_Z3B;
+          end
         end
         
-        WAIT_WRITE_DMA_Z3_FINALIZE: begin
-          if (m00_axi_awready_reg) begin
-            m00_axi_awvalid_z3 <= 0;
-            m00_axi_wvalid_z3 <= 0;
-            zorro_state <= Z3_ENDCYCLE;
-            dtack <= 1;
-            slaven <= 0;
+        WAIT_WRITE_DMA_Z3B: begin
+          m00_axi_awvalid_z3 <= 0;
+          m00_axi_wvalid_z3 <= 1;
+          if (m00_axi_wready) begin
+            zorro_state <= WAIT_WRITE_DMA_Z3C;
           end
+        end
+        
+        // not sure if this extra state is needed actually
+        WAIT_WRITE_DMA_Z3C: begin
+          m00_axi_wvalid_z3 <= 0;
+          zorro_state <= Z3_ENDCYCLE;
         end
         
         Z3_ENDCYCLE: begin
           z3_axi_write <= 0;
+          dtack <= 1;
+          slaven <= 0;
 
           // we're timing out or own dtack here. because of a zorro
           // bug / subtlety, dtack can be sampled incorrectly to "hang over"
