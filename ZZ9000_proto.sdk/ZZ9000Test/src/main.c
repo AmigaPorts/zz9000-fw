@@ -1215,6 +1215,8 @@ int main() {
 						break;
 					}
 
+					Xil_DCacheFlush();
+
 					uint8_t* bmp_data = (uint8_t*) ((u32) framebuffer
 							+ blitter_src_offset);
 
@@ -1309,6 +1311,8 @@ int main() {
 					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
 							blitter_dst_pitch);
 
+					Xil_DCacheFlush();
+
 					switch (zdata) {
 					case 1: // Regular BlitRect
 						copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
@@ -1325,7 +1329,6 @@ int main() {
 								blitter_src_pitch);
 						break;
 					}
-					//Xil_DCacheFlush();
 					break;
 
 				case MNT_BASE_RECTOP + 0x16: {
@@ -1360,6 +1363,8 @@ int main() {
 						 printf("blitter_src_pitch: %d\n\n", blitter_src_pitch);*/
 					}
 
+					Xil_DCacheFlush();
+
 					pattern_fill_rect((blitter_colormode & 0x0F), rect_x1,
 							rect_y1, rect_x2, rect_y2, draw_mode, 0xff,
 							rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data,
@@ -1379,6 +1384,8 @@ int main() {
 
 					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
 							blitter_dst_pitch);
+
+					Xil_DCacheFlush();
 
 					p2c_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
 							rect_y3, num_rows, draw_mode, planes, mask,
@@ -1411,6 +1418,8 @@ int main() {
 					// InvertRect
 					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
 							blitter_dst_pitch);
+
+					Xil_DCacheFlush();
 
 					invert_rect(rect_x1, rect_y1, rect_x2, rect_y2,
 							zdata & 0xFF, blitter_colormode);
