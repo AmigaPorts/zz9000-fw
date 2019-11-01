@@ -1082,7 +1082,7 @@ module MNTZorro_v0_1_S00_AXI
   reg m00_axi_awvalid_z3 = 0;
   reg m00_axi_wvalid_z3 = 0;
   reg [3:0] m00_axi_wstrb_z3;
-  reg z3_axi_write = 0;
+  reg z3_axi_write = 1;
   
   assign m00_axi_awaddr  = (z3_axi_write ? m00_axi_awaddr_z3 : m00_axi_awaddr_out);
   assign m00_axi_awvalid = (z3_axi_write ? m00_axi_awvalid_z3 : m00_axi_awvalid_out);
@@ -1753,7 +1753,7 @@ module MNTZorro_v0_1_S00_AXI
         end
         
         WAIT_WRITE_DMA_Z3: begin
-          z3_axi_write <= 1;
+          //z3_axi_write <= 1;
           
           m00_axi_wstrb_z3   <= {z3_ds0, z3_ds1, z3_ds2, z3_ds3};
           m00_axi_awaddr_z3  <= `ARM_MEMORY_START + (z3_mapped_addr/*&32'hfffffffc*/); // max 256MB
@@ -1780,7 +1780,7 @@ module MNTZorro_v0_1_S00_AXI
         end
         
         Z3_ENDCYCLE: begin
-          z3_axi_write <= 0;
+          //z3_axi_write <= 0;
           dtack <= 1;
           slaven <= 0;
 
