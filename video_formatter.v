@@ -48,7 +48,10 @@ localparam OP_VS=8;
 localparam OP_THRESH=9;
 localparam OP_POLARITY=10;
 localparam OP_RESET=11;
-localparam OP_MISC=12;
+localparam OP_UNUSED1=12;
+localparam OP_SPRITEXY=13;
+localparam OP_SPRITE_ADDR=14;
+localparam OP_SPRITE_DATA=15;
 
 localparam CMODE_8BIT=0;
 localparam CMODE_16BIT=1;
@@ -97,7 +100,22 @@ wire pixin_framestart = m_axis_vid_tuser[0];
 
 reg scale_y_effective;
 
-reg vga_vsync_req_in;
+reg need_frame_sync; // vga domain
+reg need_frame_sync_reg; // fetch domain
+
+// sprite
+localparam SPRITE_W = 32;
+localparam SPRITE_H = 48;
+localparam SPRITE_SIZE = SPRITE_W*SPRITE_H;
+reg [23:0] sprite_buffer[SPRITE_SIZE-1:0];
+reg [11:0] sprite_addr_in = 0;
+reg [11:0] sprite_x = 0;
+reg [11:0] sprite_y = 0;
+reg [11:0] vga_sprite_x = 0; // vga domain
+reg [11:0] vga_sprite_y = 0; // vga domain
+reg [11:0] sprite_px = 0; // vga domain
+reg [23:0] sprite_pix; // vga domain
+reg sprite_on = 0; // vga domain
 
 always @(posedge m_axis_vid_aclk)
   begin
@@ -107,6 +125,7 @@ always @(posedge m_axis_vid_aclk)
       inptr <= 0;
     end
     
+    need_frame_sync_reg <= need_frame_sync;
     need_line_fetch_reg  <= need_line_fetch; // sync to clock domain
     need_line_fetch_reg2 <= need_line_fetch_reg>>scale_y_effective; // line duplication
     
@@ -127,7 +146,6 @@ always @(posedge m_axis_vid_aclk)
       4'h0: begin
           // wait for start of frame
           ready_for_vdma <= 1;
-          vga_vsync_req_in <= 1;
           if (pixin_framestart)
             next_input_state <= 4'h3;
         end
@@ -144,7 +162,9 @@ always @(posedge m_axis_vid_aclk)
       4'h2: begin
           // we've read more than enough of this line, wait until it's time for the next
           
-          if (vsync_request) next_input_state <= 4'h0;
+          if (vsync_request) begin
+            next_input_state <= 4'h0;
+          end
           else if (need_line_fetch_reg2!=last_line_fetch) begin
             // time to read the next line
             next_input_state <= 4'h1;
@@ -154,9 +174,9 @@ always @(posedge m_axis_vid_aclk)
       4'h3: begin
           // we are at frame start, wait for the first line of video output
           ready_for_vdma <= 0;
-          vga_vsync_req_in <= 0;
           
-          if (need_line_fetch_reg2 == 0) begin
+          // line_fetch_reg2 == 0
+          if (need_frame_sync_reg==1) begin
             next_input_state <= 4'h2;
           end
         end
@@ -193,14 +213,12 @@ begin
     OP_DIMENSIONS: begin
         screen_height <= control_data_in[31:16];
         screen_width  <= control_data_in[15:0];
-        vsync_request <= 1;
       end
     OP_SCALE: begin
         scale_x  <= control_data_in[0];
         scale_y  <= control_data_in[1];
-        vsync_request <= 1;
       end
-    OP_COLORMODE: colormode  <= control_data_in[1:0];
+    OP_COLORMODE: colormode  <= control_data_in[1:0]; // FIXME
     OP_VSYNC: vsync_request <= 1; //control_data[0];
     OP_MAX: begin
         screen_v_max <= control_data_in[31:16];
@@ -227,15 +245,21 @@ begin
         screen_h_sync_end <= 796;
         screen_v_sync_start <= 581;
         screen_v_sync_end <= 586;
-        vsync_request <= 1;
         scale_x <= 0;
         scale_y <= 1;
         screen_width <= 720;
         screen_height <= 576;
         colormode <= CMODE_32BIT;
       end
-    OP_MISC: begin
-        //vga_vsync_req_in <= control_data_in[0];
+    OP_SPRITEXY: begin
+        sprite_y <= control_data_in[31:16];
+        sprite_x <= control_data_in[15:0];
+      end
+    OP_SPRITE_ADDR: begin
+        sprite_addr_in <= control_data_in[11:0];
+      end
+    OP_SPRITE_DATA: begin
+        sprite_buffer[sprite_addr_in] <= control_data_in[23:0];
       end
   endcase
 end
@@ -265,11 +289,13 @@ reg [31:0] pixout32_dly2;
 wire [7:0] red16   = {pixout16[4:0],   pixout16[4:2]};
 wire [7:0] green16 = {pixout16[10:5],  pixout16[10:9]};
 wire [7:0] blue16  = {pixout16[15:11], pixout16[15:13]};
+wire [7:0] red15   = {pixout16[4:0],   pixout16[4:2]};
+wire [7:0] green15 = {pixout16[9:5],   pixout16[9:7]};
+wire [7:0] blue15  = {pixout16[14:10], pixout16[14:12]};
 
 reg [3:0] counter_scanout_step; // = 0;
 reg [3:0] counter_subpixel = 0;
 
-reg vga_vsync_request = 0;
 reg vga_sync_polarity = 0;
 
 always @(posedge dvi_clk) begin
@@ -277,14 +303,17 @@ always @(posedge dvi_clk) begin
   vga_v_rez <= screen_height;
   vga_h_max <= screen_h_max;
   vga_v_max <= screen_v_max;
-  vga_h_sync_start <= screen_h_sync_start;
-  vga_h_sync_end <= screen_h_sync_end;
+  vga_h_sync_start <= screen_h_sync_start; //  + 4
+  vga_h_sync_end <= screen_h_sync_end; //  + 4
   vga_v_sync_start <= screen_v_sync_start;
   vga_v_sync_end <= screen_v_sync_end;
   vga_scale_x <= scale_x;
   vga_colormode <= colormode;
   vga_sync_polarity <= sync_polarity;
-  vga_vsync_request <= vga_vsync_req_in;
+  if (counter_y == 0) begin
+    vga_sprite_x <= sprite_x;
+    vga_sprite_y <= sprite_y;
+  end
   
   // FIXME there is some non-determinism in the relationship
   // between this process and the fetching process
@@ -326,12 +355,14 @@ always @(posedge dvi_clk) begin
   endcase
   
   case ({vga_scale_x,vga_colormode})
-    4'b0000: counter_scanout_step <= 3;
+    4'b0000: counter_scanout_step <= 3; // 8 bit
     4'b1000: counter_scanout_step <= 7;
-    4'b0001: counter_scanout_step <= 1;
+    4'b0001: counter_scanout_step <= 1; // 16 bit
     4'b1001: counter_scanout_step <= 3;
-    4'b0010: counter_scanout_step <= 0;
+    4'b0010: counter_scanout_step <= 0; // 32 bit
     4'b1010: counter_scanout_step <= 1;
+    //4'b0100: counter_scanout_step <= 1; // 15 bit
+    //4'b1100: counter_scanout_step <= 3;
   endcase
   
   if (counter_x>vga_h_rez) begin
@@ -348,7 +379,11 @@ always @(posedge dvi_clk) begin
   pixout32 <= line_buffer[counter_scanout];
   
   if (vga_colormode==CMODE_16BIT)
+    // 16 bit 5r6g5b
     pixout32_dly <= {8'b0,blue16,green16,red16};
+  //else if (vga_colormode==CMODE_15BIT)
+  //  // 15 bit 5r5g5b for shapeshifter
+  //  pixout32_dly <= {8'b0,blue15,green15,red15};
   else
     pixout32_dly <= pixout32;
   pixout32_dly2 <= pixout32_dly;
@@ -361,15 +396,22 @@ always @(posedge dvi_clk) begin
     CMODE_32BIT: pixout <= pixout32_dly2;
   endcase
   
-  dvi_rgb <= pixout;
+  sprite_pix <= sprite_buffer[sprite_px];
+  if (counter_y >= vga_sprite_y && counter_y < (vga_sprite_y+SPRITE_H) 
+      && counter_x >= vga_sprite_x && counter_x < (vga_sprite_x+SPRITE_W)) begin
+    sprite_on <= 1;
+    sprite_px <= sprite_px + 1;
+  end else begin
+    sprite_on <= 0;
+  end
   
-  if (vga_vsync_request) begin
-    counter_x <= 0;
-  end else
+  dvi_rgb <= (sprite_on && sprite_pix!='hff00ff) ? sprite_pix : pixout;
+  
   if (counter_x > vga_h_max) begin
     counter_x <= 0;
     if (counter_y > vga_v_max) begin
       counter_y <= 0;
+      sprite_px <= 0;
     end else begin
       counter_y <= counter_y + 1'b1;
     end
@@ -384,6 +426,12 @@ always @(posedge dvi_clk) begin
       need_line_fetch <= 0;
   end
   
+  // signal synchronization point to fetch process
+  if (counter_x<8 && counter_y==vga_v_sync_start)
+    need_frame_sync <= 1;
+  else
+    need_frame_sync <= 0;
+  
   if (counter_x>=vga_h_sync_start && counter_x<vga_h_sync_end)
     dvi_hsync <= 1^vga_sync_polarity;
   else
@@ -397,8 +445,7 @@ always @(posedge dvi_clk) begin
   // 4 clocks pipeline delay
   vga_h_rez_shifted <= vga_h_rez+4;
   
-  // shifted by 1px (one row)
-  if (counter_y>0 && counter_y<=vga_v_rez && counter_x==4)
+  if (counter_y<vga_v_rez && counter_x==4)
     dvi_active_video <= 1;
     
   if (counter_x==vga_h_rez_shifted)
