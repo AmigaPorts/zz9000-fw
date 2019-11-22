@@ -759,11 +759,11 @@ void sprite_hide() {
 	sprite_x = 2000;
 	sprite_y = 2000;
 	sprite_enabled = 0;
+	video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 }
 
 void sprite_reset() {
 	sprite_hide();
-	video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 
 	for (int y=0; y<16; y++) {
 		for (int x=0; x<16; x++) {
@@ -1235,7 +1235,6 @@ int main() {
 					}
 					else if (zdata == 2) { // Hardware sprite disabled
 						sprite_hide();
-						video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 						break;
 					}
 
@@ -1675,6 +1674,10 @@ int main() {
 
 			// FIXME magic constant
 			if (videocap_enabled && framebuffer_pan_offset >= 0xe00000) {
+				if (sprite_enabled) {
+					sprite_hide();
+				}
+
 				if (!videocap_enabled_old) {
 					videocap_area_clear();
 
@@ -1720,6 +1723,10 @@ int main() {
 					printf("videocap interlace mode changed.\n");
 				}
 				interlace_old = interlace;
+			}
+			else {
+				if(!sprite_enabled)
+					sprite_enabled = 1;
 			}
 
 			if (videocap_enabled_old != videocap_enabled) {
