@@ -1151,9 +1151,8 @@ int main() {
 					framebuffer_pan_offset |= zdata;
 
 					if (framebuffer_pan_offset != framebuffer_pan_offset_old) {
-						request_video_align=1;
-//						init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
-//						video_formatter_valign();
+						// VDMA will be reinitialized on the next vertical blank
+						request_video_align = 1;
 						framebuffer_pan_offset_old = framebuffer_pan_offset;
 					}
 					break;
@@ -1745,12 +1744,13 @@ int main() {
 			}
 		}
 
-		vblank = (zstate_raw & (1<<21));
-		if(vblank&&request_video_align)
-		{
-			request_video_align=0;
-			init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
-//			video_formatter_valign();
+		// re-init VDMA if requested
+		if (request_video_align) {
+			vblank = (zstate_raw & (1<<21));
+			if (vblank) {
+				request_video_align = 0;
+				init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
+			}
 		}
 
 		// TODO: potential hang, timeout?
