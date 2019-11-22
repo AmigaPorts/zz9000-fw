@@ -179,7 +179,8 @@ module MNTZorro_v0_1_S00_AXI
    // video_formatter control interface
    output reg [31:0] video_control_data,
    output reg [7:0]  video_control_op,
-   output reg video_control_interlace, 
+   output reg video_control_interlace,
+   input wire video_control_vblank, 
   
    // Xilinx AXI4-Lite implementation starts here ==============================
    
@@ -256,7 +257,7 @@ module MNTZorro_v0_1_S00_AXI
   reg [`C_S_AXI_DATA_WIDTH-1 : 0]   axi_rdata;
   reg [1 : 0]   axi_rresp;
   reg   axi_rvalid;
-
+  
   // Example-specific design signals
   // local localparam for addressing 32 bit / 64 bit C_S_AXI_DATA_WIDTH
   // ADDR_LSB is used for addressing 32/64 bit registers/memories
@@ -1937,7 +1938,7 @@ module MNTZorro_v0_1_S00_AXI
     //          `-- 24                   `-- 23         `-- 22 `-- 7:0
     
     out_reg3 <= {zorro_ram_write_request, zorro_ram_read_request, zorro_ram_write_bytes, ZORRO3, 
-                video_control_interlace, videocap_mode, videocap_ntsc, 14'b0, zorro_state};
+                video_control_interlace, videocap_mode, videocap_ntsc, video_control_vblank, 13'b0, zorro_state};
   end
 
   assign slv_reg_rden = axi_arready & S_AXI_ARVALID & ~axi_rvalid;

@@ -1071,6 +1071,9 @@ int main() {
 	int backlog_nag_counter = 0;
 	int interrupt_enabled = 0;
 
+	int request_video_align=0;
+	int vblank=0;
+
 	while (1) {
 		u32 zstate = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG3);
 		zstate_raw = zstate;
@@ -1148,8 +1151,9 @@ int main() {
 					framebuffer_pan_offset |= zdata;
 
 					if (framebuffer_pan_offset != framebuffer_pan_offset_old) {
-						init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
-						video_formatter_valign();
+						request_video_align=1;
+//						init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
+//						video_formatter_valign();
 						framebuffer_pan_offset_old = framebuffer_pan_offset;
 					}
 					break;
@@ -1739,6 +1743,14 @@ int main() {
 				// RESET
 				handle_amiga_reset();
 			}
+		}
+
+		vblank = (zstate_raw & (1<<21));
+		if(vblank&&request_video_align)
+		{
+			request_video_align=0;
+			init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
+//			video_formatter_valign();
 		}
 
 		// TODO: potential hang, timeout?
