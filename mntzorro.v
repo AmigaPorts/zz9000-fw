@@ -149,6 +149,32 @@ module MNTZorro_v0_1_S00_AXI
     input wire [1 : 0] m00_axi_rresp,
     input wire m00_axi_rlast,
     input wire m00_axi_rvalid,*/
+    
+      
+   //  HP master interface 2 to write to PS memory directly (for videocap)
+   input wire m01_axi_aclk,
+   input wire m01_axi_aresetn,
+   // write address channel
+   input wire m01_axi_awready,
+   output wire [`C_M00_AXI_ADDR_WIDTH-1 : 0] m01_axi_awaddr,
+   output reg [7:0] m01_axi_awlen,
+   output reg [2:0] m01_axi_awsize,
+   output reg [1:0] m01_axi_awburst,
+   output reg m01_axi_awlock,
+   output reg [3:0] m01_axi_awcache,
+   output reg [2:0] m01_axi_awprot,
+   output reg [3:0] m01_axi_awqos,
+   output wire m01_axi_awvalid,
+   // write channel
+   input wire m01_axi_wready,
+   output wire [`C_M00_AXI_DATA_WIDTH-1 : 0] m01_axi_wdata,
+   output wire [`C_M00_AXI_DATA_WIDTH/8-1 : 0] m01_axi_wstrb,
+   output reg m01_axi_wlast,
+   output wire m01_axi_wvalid,
+   // buffered write response channel
+   input wire [1 : 0] m01_axi_bresp,
+   input wire m01_axi_bvalid,
+   output reg m01_axi_bready,
 
    // video_formatter control interface
    output reg [31:0] video_control_data,
@@ -1067,9 +1093,6 @@ module MNTZorro_v0_1_S00_AXI
   reg [31:0] videocap_save_addr=0;
   reg [3:0] videocap_save_state=0; // FIXME
   
-  reg m00_axi_awready_reg;
-  reg m00_axi_wready_reg;
-  
   reg videocap_mode_sync;
   
   reg [31:0] m00_axi_awaddr_out;
@@ -1082,20 +1105,26 @@ module MNTZorro_v0_1_S00_AXI
   reg m00_axi_awvalid_z3 = 0;
   reg m00_axi_wvalid_z3 = 0;
   reg [3:0] m00_axi_wstrb_z3;
-  reg z3_axi_write = 1;
+  reg z3_axi_write = 0;
   
-  assign m00_axi_awaddr  = (z3_axi_write ? m00_axi_awaddr_z3 : m00_axi_awaddr_out);
-  assign m00_axi_awvalid = (z3_axi_write ? m00_axi_awvalid_z3 : m00_axi_awvalid_out);
-  assign m00_axi_wdata   = (z3_axi_write ? m00_axi_wdata_z3 : m00_axi_wdata_out);
-  assign m00_axi_wstrb   = (z3_axi_write ? m00_axi_wstrb_z3 : 4'b1111);
-  assign m00_axi_wvalid  = (z3_axi_write ? m00_axi_wvalid_z3 : m00_axi_wvalid_out);
+  /*assign m00_axi_awaddr  = (!videocap_mode ? m00_axi_awaddr_z3 : m00_axi_awaddr_out);
+  assign m00_axi_awvalid = (!videocap_mode ? m00_axi_awvalid_z3 : m00_axi_awvalid_out);
+  assign m00_axi_wdata   = (!videocap_mode ? m00_axi_wdata_z3 : m00_axi_wdata_out);
+  assign m00_axi_wstrb   = (!videocap_mode ? m00_axi_wstrb_z3 : 4'b1111);
+  assign m00_axi_wvalid  = (!videocap_mode ? m00_axi_wvalid_z3 : m00_axi_wvalid_out);*/
   
   // when bypassing videocap:
-  /*assign m00_axi_awaddr  = m00_axi_awaddr_z3;
+  assign m00_axi_awaddr  = m00_axi_awaddr_z3;
   assign m00_axi_awvalid = m00_axi_awvalid_z3;
   assign m00_axi_wdata   = m00_axi_wdata_z3;
   assign m00_axi_wstrb   = m00_axi_wstrb_z3;
-  assign m00_axi_wvalid  = m00_axi_wvalid_z3;*/
+  assign m00_axi_wvalid  = m00_axi_wvalid_z3;
+  
+  assign m01_axi_awaddr  = m00_axi_awaddr_out;
+  assign m01_axi_awvalid = m00_axi_awvalid_out;
+  assign m01_axi_wdata   = m00_axi_wdata_out;
+  assign m01_axi_wstrb   = 4'b1111;
+  assign m01_axi_wvalid  = m00_axi_wvalid_out;
   
   // FIXME i think this process can be dissolved
   // AXI DMA arbiter
@@ -1103,12 +1132,22 @@ module MNTZorro_v0_1_S00_AXI
     m00_axi_awlen <= 'h0; // 1 burst (1 write)
     m00_axi_awsize <= 'h2; // 2^2 == 4 bytes
     m00_axi_awburst <= 'h0; // FIXED (non incrementing)
-    m00_axi_awcache <= 'h1;
+    m00_axi_awcache <= 'h3;
     m00_axi_awlock <= 'h0;
     m00_axi_awprot <= 'h0;
     m00_axi_awqos <= 'h0;
     m00_axi_wlast <= 'h1;
     m00_axi_bready <= 'h1;
+    
+    m01_axi_awlen <= 'h0; // 1 burst (1 write)
+    m01_axi_awsize <= 'h2; // 2^2 == 4 bytes
+    m01_axi_awburst <= 'h0; // FIXED (non incrementing)
+    m01_axi_awcache <= 'h3;
+    m01_axi_awlock <= 'h0;
+    m01_axi_awprot <= 'h0;
+    m01_axi_awqos <= 'h0;
+    m01_axi_wlast <= 'h1;
+    m01_axi_bready <= 'h1;
   end
     
   always @(posedge S_AXI_ACLK) begin
