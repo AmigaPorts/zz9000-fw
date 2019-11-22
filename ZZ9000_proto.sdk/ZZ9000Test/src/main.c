@@ -720,9 +720,12 @@ void video_mode_init(int mode, int scalemode, int colormode) {
 	vmode_hdiv = hdiv;
 }
 
-uint16_t sprite_x = 0;
-uint16_t sprite_y = 0;
+int16_t sprite_x = 0, sprite_x_adj = 0;
+int16_t sprite_y = 0, sprite_y_adj = 0;
 uint16_t sprite_enabled = 0;
+uint32_t sprite_buf[32 * 48];
+uint8_t sprite_clipped = 0;
+int16_t sprite_clip_x = 0, sprite_clip_y = 0;
 
 int8_t sprite_x_offset = 0;
 int8_t sprite_y_offset = 0;
@@ -756,11 +759,11 @@ void sprite_hide() {
 	sprite_x = 2000;
 	sprite_y = 2000;
 	sprite_enabled = 0;
+	video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 }
 
 void sprite_reset() {
 	sprite_hide();
-	video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 
 	for (int y=0; y<16; y++) {
 		for (int x=0; x<16; x++) {
@@ -1187,22 +1190,43 @@ int main() {
 					video_mode = zdata;
 					break;
 				case MNT_BASE_SPRITEX:
-				 	// FIXME the mouse cursor image is offset three pixels to the right when displayed by the FPGA.
-					if (!sprite_enabled)
-						break;
-					sprite_x = zdata + sprite_x_offset + 3;
-					if (sprite_x>32000) sprite_x = 0; // FIXME kludge
-					// horizontally doubled mode
-					if (scalemode&1) sprite_x*=2;
-					video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
-					break;
 				case MNT_BASE_SPRITEY:
 					if (!sprite_enabled)
 						break;
-					sprite_y = zdata + sprite_y_offset;
-					// vertically doubled mode
-					if (scalemode&2) sprite_y*=2;
-					video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
+					if (zaddr == MNT_BASE_SPRITEX) {
+						// The "+#" offset at the end is dependent on implementation timing slack, and needs
+						// to be adjusted based on the sprite X offset produced by the current run.
+						sprite_x = (int16_t)zdata + sprite_x_offset + 3;
+						sprite_x_adj = sprite_x;
+						// horizontally doubled mode
+						if (scalemode&1) sprite_x*=2;
+					}
+					else {
+						sprite_y = (int16_t)zdata + sprite_y_offset;
+						sprite_y_adj = sprite_y;
+						// vertically doubled mode
+						if (scalemode&2) sprite_y*=2;
+
+						if (sprite_x < 0 || sprite_y < 0) {
+							if (sprite_clip_x != sprite_x || sprite_clip_y != sprite_y) {
+								clip_hw_sprite((sprite_x < 0) ? sprite_x : 0, (sprite_y < 0) ? sprite_y : 0);
+							}
+							sprite_clipped = 1;
+							if (sprite_x < 0) {
+								sprite_x_adj = 0;
+								sprite_clip_x = sprite_x;
+							}
+							if (sprite_y < 0) {
+								sprite_y_adj = 0;
+								sprite_clip_y = sprite_y;
+							}
+						}
+						else if (sprite_clipped && sprite_x >= 0 && sprite_y >= 0) {
+							clip_hw_sprite(0, 0);
+							sprite_clipped = 0;
+						}
+						video_formatter_write((sprite_y_adj << 16) | sprite_x_adj, MNTVF_OP_SPRITE_XY);
+					}
 					break;
 				case MNT_BASE_RECTOP + 0x38: { // SPRITE_BITMAP
 					if (zdata == 1) { // Hardware sprite enabled
@@ -1211,14 +1235,13 @@ int main() {
 					}
 					else if (zdata == 2) { // Hardware sprite disabled
 						sprite_hide();
-						video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 						break;
 					}
 
 					uint8_t* bmp_data = (uint8_t*) ((u32) framebuffer
 							+ blitter_src_offset);
 
-					clear_hw_sprite(sprite_width, sprite_height);
+					clear_hw_sprite();
 					
 					sprite_x_offset = rect_x1;
 					sprite_y_offset = rect_y1;
@@ -1304,29 +1327,38 @@ int main() {
 								blitter_colormode, mask);
 					break;
 
-				case MNT_BASE_RECTOP + 0x14:
+				case MNT_BASE_RECTOP + 0x14: {
 					// copy rectangle
 					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
 							blitter_dst_pitch);
+					mask = (blitter_colormode >> 8);
 
 					switch (zdata) {
 					case 1: // Regular BlitRect
-						copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
-								rect_y3, blitter_colormode & 0x0F,
-								(uint32_t*) ((u32) framebuffer
-										+ blitter_dst_offset),
-								blitter_dst_pitch);
+						if (mask == 0xFF || (mask != 0xFF && (blitter_colormode & 0x0F)) != MNTVA_COLOR_8BIT)
+							copy_rect_nomask(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+											rect_y3, blitter_colormode & 0x0F,
+											(uint32_t*) ((u32) framebuffer
+													+ blitter_dst_offset),
+											blitter_dst_pitch, MINTERM_SRC);
+						else 
+							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+									rect_y3, blitter_colormode & 0x0F,
+									(uint32_t*) ((u32) framebuffer
+											+ blitter_dst_offset),
+									blitter_dst_pitch, mask);
 						break;
 					case 2: // BlitRectNoMaskComplete
-						copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
-								rect_y3, blitter_colormode & 0x0F,
-								(uint32_t*) ((u32) framebuffer
-										+ blitter_src_offset),
-								blitter_src_pitch);
+						copy_rect_nomask(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+										rect_y3, blitter_colormode & 0x0F,
+										(uint32_t*) ((u32) framebuffer
+												+ blitter_src_offset),
+										blitter_src_pitch, mask); // Mask in this case is minterm/opcode.
 						break;
 					}
 
 					break;
+				}
 
 				case MNT_BASE_RECTOP + 0x16: {
 					uint8_t draw_mode = blitter_colormode >> 8;
@@ -1339,31 +1371,26 @@ int main() {
 					if (bpp == 0)
 						bpp = 1;
 					uint16_t loop_rows = 0;
+					mask = zdata;
 
 					if (zdata & 0x8000) {
 						// pattern mode
 						// TODO yoffset
 						loop_rows = zdata & 0xff;
+						mask = blitter_user1;
+						blitter_src_pitch = 16;
+						pattern_fill_rect((blitter_colormode & 0x0F), rect_x1,
+								rect_y1, rect_x2, rect_y2, draw_mode, mask,
+								rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data,
+								blitter_src_pitch, loop_rows);
 					}
-
-					if (loop_rows > 0) {
-						/*printf("fill_template:\n====================\n");
-						 printf("bpp: %d\n", bpp);
-						 printf("loop_rows: %d\n", loop_rows);
-						 printf("x:y1 - x:y2 %d:%d - %d:%d\n", rect_x1, rect_y1, rect_x2, rect_y2);
-						 printf("draw_mode: %d\n", draw_mode);
-						 printf("rect_rgb: %lx\n", rect_rgb);
-						 printf("rect_rgb2: %lx\n", rect_rgb2);
-						 printf("rect_x3: %d\n", rect_x3);
-						 printf("rect_y3: %d\n", rect_y3);
-						 printf("tmpl_data: %p\n", tmpl_data);
-						 printf("blitter_src_pitch: %d\n\n", blitter_src_pitch);*/
+					else {
+						template_fill_rect((blitter_colormode & 0x0F), rect_x1,
+								rect_y1, rect_x2, rect_y2, draw_mode, mask,
+								rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data,
+								blitter_src_pitch);
 					}
-
-					pattern_fill_rect((blitter_colormode & 0x0F), rect_x1,
-							rect_y1, rect_x2, rect_y2, draw_mode, 0xff,
-							rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data,
-							blitter_src_pitch, loop_rows);
+					
 					break;
 				}
 
@@ -1380,9 +1407,28 @@ int main() {
 					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
 							blitter_dst_pitch);
 
-					p2c_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+					p2c_rect(rect_x1, 0, rect_x2, rect_y2, rect_x3,
 							rect_y3, num_rows, draw_mode, planes, mask,
 							layer_mask, blitter_src_pitch, bmp_data);
+					break;
+				}
+
+				case MNT_BASE_RECTOP + 0x2c: {
+					// Rect P2D
+					uint8_t draw_mode = blitter_colormode >> 8;
+					uint8_t planes = (zdata & 0xFF00) >> 8;
+					uint8_t mask = (zdata & 0xFF);
+					uint16_t num_rows = blitter_user1;
+					uint8_t layer_mask = blitter_user2;
+					uint8_t* bmp_data = (uint8_t*) ((u32) framebuffer
+							+ blitter_src_offset);
+
+					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
+							blitter_dst_pitch);
+
+					p2d_rect(rect_x1, 0, rect_x2, rect_y2, rect_x3,
+							rect_y3, num_rows, draw_mode, planes, mask, layer_mask, rect_rgb,
+							blitter_src_pitch, bmp_data, (blitter_colormode & 0x0F));
 					break;
 				}
 
@@ -1627,6 +1673,10 @@ int main() {
 
 			// FIXME magic constant
 			if (videocap_enabled && framebuffer_pan_offset >= 0xe00000) {
+				if (sprite_enabled) {
+					sprite_hide();
+				}
+
 				if (!videocap_enabled_old) {
 					videocap_area_clear();
 
@@ -1672,6 +1722,10 @@ int main() {
 					printf("videocap interlace mode changed.\n");
 				}
 				interlace_old = interlace;
+			}
+			else {
+				if(!sprite_enabled)
+					sprite_enabled = 1;
 			}
 
 			if (videocap_enabled_old != videocap_enabled) {
