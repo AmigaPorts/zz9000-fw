@@ -32,6 +32,7 @@
 
 #include "gfx.h"
 #include "ethernet.h"
+#include "usb.h"
 #include "xgpiops.h"
 
 #include "xil_misc_psreset_api.h"
@@ -818,6 +819,8 @@ void handle_amiga_reset() {
 	// scalemode 2 (vertical doubling)
 	video_mode_init(videocap_video_mode, 2, MNTVA_COLOR_32BIT);
 	video_mode = videocap_video_mode | 2 << 12 | MNTVA_COLOR_32BIT << 8;
+
+	test_usb();
 
 	ethernet_init();
 	sprite_reset();
