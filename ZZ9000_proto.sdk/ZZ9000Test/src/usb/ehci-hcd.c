@@ -948,14 +948,14 @@ static int ehci_submit_root(struct usb_device *dev, unsigned long pipe,
 	if (srcptr != NULL && len > 0)
 		memcpy(buffer, srcptr, len);
 	else
-		printf("Len is 0\n");
+		printf("[ehci] Len is 0\n");
 
 	dev->act_len = len;
 	dev->status = 0;
 	return 0;
 
 unknown:
-	printf("requesttype=%x, request=%x, value=%x, index=%x, length=%x\n",
+	printf("[ehci unknown] requesttype=%x, request=%x, value=%x, index=%x, length=%x\n",
 	      req->requesttype, req->request, le16_to_cpu(req->value),
 	      le16_to_cpu(req->index), le16_to_cpu(req->length));
 
@@ -1147,10 +1147,12 @@ int usb_lowlevel_init(int index, enum usb_init_type init, void **controller)
 		goto done;
 
 	/* EHCI spec section 4.1 */
-	if (ehci_reset(ctrl)) {
-		printf("[usb_lowlevel_init] ehci_reset failed\n");
-		return -1;
-	}
+	// FIXME mntmn
+	//if (ehci_reset(ctrl)) {
+	//	printf("[usb_lowlevel_init] ehci_reset failed\n");
+	//	return -1;
+	//}
+	printf("[usb_lowlevel_init] skipped ehci_reset\n");
 
 #if defined(CONFIG_EHCI_HCD_INIT_AFTER_RESET)
 	rc = ehci_hcd_init(index, init, &ctrl->hccr, &ctrl->hcor);

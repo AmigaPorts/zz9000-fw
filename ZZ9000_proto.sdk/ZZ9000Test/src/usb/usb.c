@@ -197,10 +197,10 @@ int usb_submit_int_msg(struct usb_device *dev, unsigned long pipe,
 }
 
 /*
- * submits a control message and waits for comletion (at least timeout * 1ms)
+ * submits a control message and waits for completion (at least timeout * 1ms)
  * If timeout is 0, we don't wait for completion (used as example to set and
  * clear keyboards LEDs). For data transfers, (storage transfers) we don't
- * allow control messages with 0 timeout, by previousely resetting the flag
+ * allow control messages with 0 timeout, by previously resetting the flag
  * asynch_allowed (usb_disable_asynch(1)).
  * returns the transferred length if OK or -1 if error. The transferred length
  * and the current status are stored in the dev->act_len and dev->status.
@@ -224,7 +224,7 @@ int usb_control_msg(struct usb_device *dev, unsigned int pipe,
 	setup_packet->value = cpu_to_le16(value);
 	setup_packet->index = cpu_to_le16(index);
 	setup_packet->length = cpu_to_le16(size);
-	printf("usb_control_msg: request: 0x%X, requesttype: 0x%X, " \
+	printf("[usb] usb_control_msg: request: 0x%X, requesttype: 0x%X, " \
 	      "value 0x%X index 0x%X length 0x%X\n",
 	      request, requesttype, value, index, size);
 	dev->status = USB_ST_NOT_PROC; /*not yet processed */
@@ -241,15 +241,18 @@ int usb_control_msg(struct usb_device *dev, unsigned int pipe,
 	 * been completed.
 	 */
 	while (timeout--) {
-		if (!((volatile unsigned long)dev->status & USB_ST_NOT_PROC))
+		if (!((volatile unsigned long)dev->status & USB_ST_NOT_PROC)) {
 			break;
-		mdelay(1);
+		}
+		mdelay(2); // FIXME mntmn
+	}
+	if (timeout==0) {
+		printf("[usb] usb_control_msg timeout!\n");
 	}
 	if (dev->status)
 		return -1;
 
 	return dev->act_len;
-
 }
 
 /*-------------------------------------------------------------------

@@ -11,6 +11,7 @@
 #include "ehci.h"
 #include <stdio.h>
 #include <xusbps_hw.h>
+#include <sleep.h>
 
 #define EINVAL 1
 
@@ -20,8 +21,6 @@
 int ehci_hcd_init(int index, enum usb_init_type init,
 		struct ehci_hccr **hccr, struct ehci_hcor **hcor)
 {
-	enum usb_init_type type;
-
 	if (index > 0) {
 		printf("[ehci_hcd_init] index out of range: %d\n",index);
 		return -EINVAL;
@@ -64,15 +63,47 @@ int ehci_zynq_probe(struct zynq_ehci_priv *priv)
 
 	printf("[ehci-zynq] viewport_addr: %p\n", &priv->ehci->ulpi_viewpoint);
 
+
+	// lifted from https://elixir.bootlin.com/u-boot/latest/source/drivers/usb/host/ehci-fsl.c#L275
+	/* Set to Host mode */
+	setbits_le32(&ehci->usbmode, CM_HOST);
+
+	// FIXME: need to figure out which of these are necessary
+
+	//printf("[ehci-zynq] 1\n");
+	//out_be32(&ehci->snoop1, SNOOP_SIZE_2GB);
+	//printf("[ehci-zynq] 2\n");
+	//out_be32(&ehci->snoop2, 0x80000000 | SNOOP_SIZE_2GB);
+	printf("[ehci-zynq] 3\n");
+	setbits_le32(&ehci->portsc, USB_EN);
+	// following crashes
+	//clrsetbits_be32(&ehci->control, CONTROL_REGISTER_W1C_MASK, PHY_CLK_SEL_ULPI);
+	printf("[ehci-zynq] 4\n");
+	//clrsetbits_be32(&ehci->control, UTMI_PHY_EN | CONTROL_REGISTER_W1C_MASK, USB_EN);
+	printf("[ehci-zynq] 5\n");
+	usleep(1000); /* delay required for PHY Clk to appear */
+	printf("[ehci-zynq] 6\n");
+	out_le32(&(hcor)->or_portsc[0], PORT_PTS_ULPI);
+
+	printf("[ehci-zynq] 7\n");
+	out_be32(&ehci->prictrl, 0x0000000c);
+	printf("[ehci-zynq] 8\n");
+	out_be32(&ehci->age_cnt_limit, 0x00000040);
+	printf("[ehci-zynq] 9\n");
+	out_be32(&ehci->sictrl, 0x00000001);
+
+	printf("[ehci-zynq] 10\n");
+	in_le32(&ehci->usbmode);
+
+	/* ULPI set flags */
+
 	ret = ulpi_init(&ulpi_vp);
 	if (ret) {
 		puts("zynq ULPI viewport init failed\n");
 		return -1;
 	}
 
-	/* ULPI set flags */
-
-	// dp and dm pulldown = host mode
+	// dp and dm pulldown = host mode (really?)
 	// extvbusind = vbus indicator input
 	ulpi_write(&ulpi_vp, &ulpi->otg_ctrl,
 		   ULPI_OTG_DP_PULLDOWN | ULPI_OTG_DM_PULLDOWN |
@@ -86,5 +117,7 @@ int ehci_zynq_probe(struct zynq_ehci_priv *priv)
 	ulpi_write(&ulpi_vp, &ulpi->otg_ctrl_set,
 		   ULPI_OTG_DRVVBUS | ULPI_OTG_DRVVBUS_EXT);
 
-	return ehci_register(&priv->ehcictrl, hccr, hcor, NULL, 0, USB_INIT_HOST);
+	// FIXME removing this made it work! probably because there is another ehci_reset in there?
+	//return ehci_register(&priv->ehcictrl, hccr, hcor, NULL, 0, USB_INIT_HOST);
+	return 0;
 }

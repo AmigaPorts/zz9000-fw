@@ -388,11 +388,12 @@ static int usb_scan_port(struct usb_device_scan *usb_scan)
 	if (ret < 0) {
 		printf("get_port_status failed\n");
 		if (get_timer(0) >= hub->connect_timeout) {
-			printf("devnum=%d port=%d: timeout\n",
+			printf("[usb-hub] devnum=%d port=%d: timeout\n",
 			      dev->devnum, i + 1);
 			/* Remove this device from scanning list */
-			list_del(&usb_scan->list);
-			free(usb_scan);
+			// FIXME mntmn
+			//list_del(&usb_scan->list);
+			//free(usb_scan);
 			return 0;
 		}
 		return 0;
@@ -400,7 +401,7 @@ static int usb_scan_port(struct usb_device_scan *usb_scan)
 
 	portstatus = le16_to_cpu(portsts->wPortStatus);
 	portchange = le16_to_cpu(portsts->wPortChange);
-	printf("Port %d Status %X Change %X\n", i + 1, portstatus, portchange);
+	printf("[usb-hub] Port %d Status %X Change %X\n", i + 1, portstatus, portchange);
 
 	/*
 	 * No connection change happened, wait a bit more.
@@ -412,34 +413,35 @@ static int usb_scan_port(struct usb_device_scan *usb_scan)
 	if (!(portchange & USB_PORT_STAT_C_CONNECTION) &&
 	    !(portstatus & USB_PORT_STAT_CONNECTION)) {
 		if (get_timer(0) >= hub->connect_timeout) {
-			printf("devnum=%d port=%d: timeout\n",
+			printf("[usb-hub] devnum=%d port=%d: timeout\n",
 			      dev->devnum, i + 1);
 			/* Remove this device from scanning list */
-			list_del(&usb_scan->list);
-			free(usb_scan);
+			// FIXME mntmn
+			//list_del(&usb_scan->list);
+			//free(usb_scan);
 			return 0;
 		}
 		return 0;
 	}
 
 	if (portchange & USB_PORT_STAT_C_RESET) {
-		printf("port %d reset change\n", i + 1);
+		printf("[usb-hub] port %d reset change\n", i + 1);
 		usb_clear_port_feature(dev, i + 1, USB_PORT_FEAT_C_RESET);
 	}
 
 	if ((portchange & USB_SS_PORT_STAT_C_BH_RESET) &&
 	    usb_hub_is_superspeed(dev)) {
-		printf("port %d BH reset change\n", i + 1);
+		printf("[usb-hub] port %d BH reset change\n", i + 1);
 		usb_clear_port_feature(dev, i + 1, USB_SS_PORT_FEAT_C_BH_RESET);
 	}
 
 	/* A new USB device is ready at this point */
-	printf("devnum=%d port=%d: USB dev found\n", dev->devnum, i + 1);
+	printf("[usb-hub] devnum=%d port=%d: USB dev found\n", dev->devnum, i + 1);
 
 	usb_hub_port_connect_change(dev, i);
 
 	if (portchange & USB_PORT_STAT_C_ENABLE) {
-		printf("port %d enable change, status %x\n", i + 1, portstatus);
+		printf("[usb-hub] port %d enable change, status %x\n", i + 1, portstatus);
 		usb_clear_port_feature(dev, i + 1, USB_PORT_FEAT_C_ENABLE);
 		/*
 		 * The following hack causes a ghost device problem

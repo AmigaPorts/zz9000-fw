@@ -8,12 +8,23 @@
 
 #include <xil_types.h>
 
+#define uswap_16(x) \
+	((((x) & 0xff00) >> 8) | \
+	 (((x) & 0x00ff) << 8))
+#define uswap_32(x) \
+	((((x) & 0xff000000) >> 24) | \
+	 (((x) & 0x00ff0000) >>  8) | \
+	 (((x) & 0x0000ff00) <<  8) | \
+	 (((x) & 0x000000ff) << 24))
+
 #define cpu_to_le16(x)		(x)
 #define cpu_to_le32(x)		(x)
 #define cpu_to_le64(x)		(x)
 #define le16_to_cpu(x)		(x)
 #define le32_to_cpu(x)		(x)
 #define le64_to_cpu(x)		(x)
+#define cpu_to_be32(x)		uswap_32(x)
+#define be32_to_cpu(x)		uswap_32(x)
 
 #define roundup(x, y) (					\
 {							\
