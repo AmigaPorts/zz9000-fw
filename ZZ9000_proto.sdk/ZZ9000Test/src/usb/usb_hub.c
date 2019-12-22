@@ -121,10 +121,10 @@ static void usb_hub_power_on(struct usb_hub_device *hub)
 
 	dev = hub->pusb_dev;
 
-	printf("enabling power on all ports\n");
+	printf("[usb-hub] enabling power on all ports\n");
 	for (i = 0; i < dev->maxchild; i++) {
 		usb_set_port_feature(dev, i + 1, USB_PORT_FEAT_POWER);
-		printf("port %d returns %lX\n", i + 1, dev->status);
+		//printf("port %d returns %lX\n", i + 1, dev->status);
 	}
 
 	/*
@@ -137,7 +137,7 @@ static void usb_hub_power_on(struct usb_hub_device *hub)
 	//if (env)
 	//	pgood_delay = max(pgood_delay,
 	//		          (unsigned)simple_strtol(env, NULL, 0));
-	printf("pgood_delay=%dms\n", pgood_delay);
+	//printf("pgood_delay=%dms\n", pgood_delay);
 
 	/*
 	 * Do a minimum delay of the larger value of 100ms or pgood_delay
@@ -151,9 +151,9 @@ static void usb_hub_power_on(struct usb_hub_device *hub)
 	 * usb_hub_configure() later.
 	 */
 	hub->connect_timeout = hub->query_delay + 1000;
-	printf("devnum=%d poweron: query_delay=%d connect_timeout=%d\n",
-	      dev->devnum, max(100, (int)pgood_delay),
-	      max(100, (int)pgood_delay) + 1000);
+	//printf("devnum=%d poweron: query_delay=%d connect_timeout=%d\n",
+	//      dev->devnum, max(100, (int)pgood_delay),
+	//      max(100, (int)pgood_delay) + 1000);
 }
 
 static struct usb_hub_device hub_dev[USB_MAX_HUB];
@@ -218,7 +218,7 @@ static int usb_hub_port_reset(struct usb_device *dev, int port,
 	unsigned short portstatus, portchange;
 	int delay = HUB_SHORT_RESET_TIME; /* start with short reset delay */
 
-	printf("%s: resetting port %d...\n", __func__, port + 1);
+	printf("[usb-hub] %s: resetting port %d...\n", __func__, port + 1);
 
 	for (tries = 0; tries < MAX_TRIES; tries++) {
 		err = usb_set_port_feature(dev, port + 1, USB_PORT_FEAT_RESET);
@@ -228,21 +228,21 @@ static int usb_hub_port_reset(struct usb_device *dev, int port,
 		mdelay(delay);
 
 		if (usb_get_port_status(dev, port + 1, portsts) < 0) {
-			printf("get_port_status failed status %lX\n",
+			printf("[usb-hub] get_port_status failed status %lX\n",
 			      dev->status);
 			return -1;
 		}
 		portstatus = le16_to_cpu(portsts->wPortStatus);
 		portchange = le16_to_cpu(portsts->wPortChange);
 
-		printf("portstatus %x, change %x, %s\n", portstatus, portchange,
+		printf("[usb-hub] portstatus %x, change %x, %s\n", portstatus, portchange,
 							portspeed(portstatus));
 
-		printf("STAT_C_CONNECTION = %d STAT_CONNECTION = %d" \
+		/*printf("STAT_C_CONNECTION = %d STAT_CONNECTION = %d" \
 		      "  USB_PORT_STAT_ENABLE %d\n",
 		      (portchange & USB_PORT_STAT_C_CONNECTION) ? 1 : 0,
 		      (portstatus & USB_PORT_STAT_CONNECTION) ? 1 : 0,
-		      (portstatus & USB_PORT_STAT_ENABLE) ? 1 : 0);
+		      (portstatus & USB_PORT_STAT_ENABLE) ? 1 : 0);*/
 
 		/*
 		 * Perhaps we should check for the following here:
@@ -294,7 +294,7 @@ int usb_hub_port_connect_change(struct usb_device *dev, int port)
 	}
 
 	portstatus = le16_to_cpu(portsts->wPortStatus);
-	printf("portstatus %x, change %x, %s\n",
+	printf("[usb-hub] portstatus %x, change %x, %s\n",
 	      portstatus,
 	      le16_to_cpu(portsts->wPortChange),
 	      portspeed(portstatus));
@@ -391,9 +391,8 @@ static int usb_scan_port(struct usb_device_scan *usb_scan)
 			printf("[usb-hub] devnum=%d port=%d: timeout\n",
 			      dev->devnum, i + 1);
 			/* Remove this device from scanning list */
-			// FIXME mntmn
-			//list_del(&usb_scan->list);
-			//free(usb_scan);
+			list_del(&usb_scan->list);
+			free(usb_scan); // FIXME dynamic allocation
 			return 0;
 		}
 		return 0;
@@ -416,9 +415,8 @@ static int usb_scan_port(struct usb_device_scan *usb_scan)
 			printf("[usb-hub] devnum=%d port=%d: timeout\n",
 			      dev->devnum, i + 1);
 			/* Remove this device from scanning list */
-			// FIXME mntmn
-			//list_del(&usb_scan->list);
-			//free(usb_scan);
+			list_del(&usb_scan->list);
+			free(usb_scan); // FIXME dynamic allocation
 			return 0;
 		}
 		return 0;
@@ -494,7 +492,7 @@ static int usb_scan_port(struct usb_device_scan *usb_scan)
 	 * scanning list
 	 */
 	list_del(&usb_scan->list);
-	free(usb_scan);
+	free(usb_scan); // FIXME dynamic allocation
 
 	return 0;
 }
@@ -603,37 +601,37 @@ static int usb_hub_configure(struct usb_device *dev)
 			descriptor->u.hs.PortPowerCtrlMask[i];
 
 	dev->maxchild = descriptor->bNbrPorts;
-	printf("%d ports detected\n", dev->maxchild);
+	printf("[usb-hub] %d ports detected\n", dev->maxchild);
 
 	hubCharacteristics = get_unaligned(&hub->desc.wHubCharacteristics);
 	switch (hubCharacteristics & HUB_CHAR_LPSM) {
 	case 0x00:
-		printf("ganged power switching\n");
+		printf("[usb-hub] ganged power switching\n");
 		break;
 	case 0x01:
-		printf("individual port power switching\n");
+		printf("[usb-hub] individual port power switching\n");
 		break;
 	case 0x02:
 	case 0x03:
-		printf("unknown reserved power switching mode\n");
+		printf("[usb-hub] unknown reserved power switching mode\n");
 		break;
 	}
 
 	if (hubCharacteristics & HUB_CHAR_COMPOUND)
-		printf("part of a compound device\n");
+		printf("[usb-hub] part of a compound device\n");
 	else
-		printf("standalone hub\n");
+		printf("[usb-hub] standalone hub\n");
 
 	switch (hubCharacteristics & HUB_CHAR_OCPM) {
 	case 0x00:
-		printf("global over-current protection\n");
+		printf("[usb-hub] global over-current protection\n");
 		break;
 	case 0x08:
-		printf("individual port over-current protection\n");
+		printf("[usb-hub] individual port over-current protection\n");
 		break;
 	case 0x10:
 	case 0x18:
-		printf("no over-current protection\n");
+		printf("[usb-hub] no over-current protection\n");
 		break;
 	}
 
@@ -641,15 +639,15 @@ static int usb_hub_configure(struct usb_device *dev)
 	case USB_HUB_PR_FS:
 		break;
 	case USB_HUB_PR_HS_SINGLE_TT:
-		printf("Single TT\n");
+		//printf("Single TT\n");
 		break;
 	case USB_HUB_PR_HS_MULTI_TT:
 		ret = usb_set_interface(dev, 0, 1);
 		if (ret == 0) {
-			printf("TT per port\n");
+			//printf("TT per port\n");
 			hub->tt.multi = true;
 		} else {
-			printf("Using single TT (err %d)\n", ret);
+			//printf("Using single TT (err %d)\n", ret);
 		}
 		break;
 	case USB_HUB_PR_SS:
@@ -666,34 +664,34 @@ static int usb_hub_configure(struct usb_device *dev)
 	case HUB_TTTT_8_BITS:
 		if (dev->descriptor.bDeviceProtocol != 0) {
 			hub->tt.think_time = 666;
-			printf("TT requires at most %d FS bit times (%d ns)\n",
+			printf("[usb-hub] TT requires at most %d FS bit times (%d ns)\n",
 			      8, hub->tt.think_time);
 		}
 		break;
 	case HUB_TTTT_16_BITS:
 		hub->tt.think_time = 666 * 2;
-		printf("TT requires at most %d FS bit times (%d ns)\n",
+		printf("[usb-hub] TT requires at most %d FS bit times (%d ns)\n",
 		      16, hub->tt.think_time);
 		break;
 	case HUB_TTTT_24_BITS:
 		hub->tt.think_time = 666 * 3;
-		printf("TT requires at most %d FS bit times (%d ns)\n",
+		printf("[usb-hub] TT requires at most %d FS bit times (%d ns)\n",
 		      24, hub->tt.think_time);
 		break;
 	case HUB_TTTT_32_BITS:
 		hub->tt.think_time = 666 * 4;
-		printf("TT requires at most %d FS bit times (%d ns)\n",
+		printf("[usb-hub] TT requires at most %d FS bit times (%d ns)\n",
 		      32, hub->tt.think_time);
 		break;
 	}
 
-	printf("power on to power good time: %dms\n",
+	printf("[usb-hub] power on to power good time: %dms\n",
 	      descriptor->bPwrOn2PwrGood * 2);
-	printf("hub controller current requirement: %dmA\n",
+	printf("[usb-hub] hub controller current requirement: %dmA\n",
 	      descriptor->bHubContrCurrent);
 
 	for (i = 0; i < dev->maxchild; i++)
-		printf("port %d is%s removable\n", i + 1,
+		printf("[usb-hub] port %d is%s removable\n", i + 1,
 		      hub->desc.u.hs.DeviceRemovable[(i + 1) / 8] & \
 		      (1 << ((i + 1) % 8)) ? " not" : "");
 
@@ -712,15 +710,15 @@ static int usb_hub_configure(struct usb_device *dev)
 
 	hubsts = (struct usb_hub_status *)buffer;
 
-	printf("get_hub_status returned status %X, change %X\n",
+	/*printf("get_hub_status returned status %X, change %X\n",
 	      le16_to_cpu(hubsts->wHubStatus),
-	      le16_to_cpu(hubsts->wHubChange));
-	printf("local power source is %s\n",
+	      le16_to_cpu(hubsts->wHubChange));*/
+	/*printf("local power source is %s\n",
 	      (le16_to_cpu(hubsts->wHubStatus) & HUB_STATUS_LOCAL_POWER) ? \
-	      "lost (inactive)" : "good");
-	printf("%sover-current condition exists\n",
+	      "lost (inactive)" : "good");*/
+	/*printf("%sover-current condition exists\n",
 	      (le16_to_cpu(hubsts->wHubStatus) & HUB_STATUS_OVERCURRENT) ? \
-	      "" : "no ");
+	      "" : "no ");*/
 
 	usb_hub_power_on(hub);
 
@@ -742,7 +740,7 @@ static int usb_hub_configure(struct usb_device *dev)
 	for (i = 0; i < dev->maxchild; i++) {
 		struct usb_device_scan *usb_scan;
 
-		usb_scan = calloc(1, sizeof(*usb_scan));
+		usb_scan = calloc(1, sizeof(*usb_scan)); // FIXME dynamic allocation
 		if (!usb_scan) {
 			printf("Can't allocate memory for USB device!\n");
 			return -ENOMEM;
@@ -786,11 +784,11 @@ static int usb_hub_check(struct usb_device *dev, int ifnum)
 	if ((ep->bmAttributes & 3) != 3)
 		goto err;
 	/* We found a hub */
-	printf("USB hub found\n");
+	printf("[usb-hub] USB hub found\n");
 	return 0;
 
 err:
-	printf("USB hub not found: bInterfaceClass=%d, bInterfaceSubClass=%d, bNumEndpoints=%d\n",
+	printf("[usb-hub] not a USB hub: bInterfaceClass=%d, bInterfaceSubClass=%d, bNumEndpoints=%d\n",
 	      iface->desc.bInterfaceClass, iface->desc.bInterfaceSubClass,
 	      iface->desc.bNumEndpoints);
 	if (ep) {
