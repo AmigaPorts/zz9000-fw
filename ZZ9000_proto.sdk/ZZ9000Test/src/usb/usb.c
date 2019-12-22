@@ -90,7 +90,7 @@ int usb_init(void)
 		 */
 		controllers_initialized++;
 		start_index = dev_index;
-		printf("scanning bus %d for devices... ", i);
+		printf("[usb] scanning bus %d for devices... ", i);
 		ret = usb_alloc_new_device(ctrl, &dev);
 		if (ret)
 			break;
@@ -104,17 +104,16 @@ int usb_init(void)
 			usb_free_device(dev->controller);
 
 		if (start_index == dev_index) {
-			puts("No USB Device found\n");
+			puts("[usb] No USB Device found\n");
 			continue;
 		} else {
-			printf("%d USB Device(s) found\n",
+			printf("[usb] %d USB Device(s) found\n",
 				dev_index - start_index);
 		}
 
 		usb_started = 1;
 	}
 
-	printf("scan end\n");
 	/* if we were not able to find at least one working bus, bail out */
 	if (controllers_initialized == 0)
 		puts("USB error: all controllers failed lowlevel init\n");
@@ -190,7 +189,7 @@ int usb_disable_asynch(int disable)
 /*
  * submits an Interrupt Message
  */
-int usb_submit_int_msg(struct usb_device *dev, unsigned long pipe,
+int usb_int_msg(struct usb_device *dev, unsigned long pipe,
 			void *buffer, int transfer_len, int interval)
 {
 	return submit_int_msg(dev, pipe, buffer, transfer_len, interval);
@@ -224,9 +223,10 @@ int usb_control_msg(struct usb_device *dev, unsigned int pipe,
 	setup_packet->value = cpu_to_le16(value);
 	setup_packet->index = cpu_to_le16(index);
 	setup_packet->length = cpu_to_le16(size);
-	printf("[usb] usb_control_msg: request: 0x%X, requesttype: 0x%X, " \
-	      "value 0x%X index 0x%X length 0x%X\n",
-	      request, requesttype, value, index, size);
+	// FIXME debug option
+	//printf("[usb] usb_control_msg: request: 0x%X, requesttype: 0x%X, " \
+	//     "value 0x%X index 0x%X length 0x%X\n",
+	//      request, requesttype, value, index, size);
 	dev->status = USB_ST_NOT_PROC; /*not yet processed */
 
 	err = submit_control_msg(dev, pipe, data, size, setup_packet);
@@ -244,7 +244,7 @@ int usb_control_msg(struct usb_device *dev, unsigned int pipe,
 		if (!((volatile unsigned long)dev->status & USB_ST_NOT_PROC)) {
 			break;
 		}
-		mdelay(2); // FIXME mntmn
+		mdelay(1);
 	}
 	if (timeout==0) {
 		printf("[usb] usb_control_msg timeout!\n");
@@ -334,15 +334,15 @@ static void usb_set_maxpacket_ep(struct usb_device *dev, int if_idx, int ep_idx)
 			/* OUT Endpoint */
 			if (ep_wMaxPacketSize > dev->epmaxpacketout[b]) {
 				dev->epmaxpacketout[b] = ep_wMaxPacketSize;
-				printf("##EP epmaxpacketout[%d] = %d\n",
-				      b, dev->epmaxpacketout[b]);
+				//printf("##EP epmaxpacketout[%d] = %d\n",
+				//      b, dev->epmaxpacketout[b]);
 			}
 		} else {
 			/* IN Endpoint */
 			if (ep_wMaxPacketSize > dev->epmaxpacketin[b]) {
 				dev->epmaxpacketin[b] = ep_wMaxPacketSize;
-				printf("##EP epmaxpacketin[%d] = %d\n",
-				      b, dev->epmaxpacketin[b]);
+				//printf("##EP epmaxpacketin[%d] = %d\n",
+				//      b, dev->epmaxpacketin[b]);
 			}
 		} /* if out */
 	} /* if control */
@@ -471,7 +471,7 @@ static int usb_parse_config(struct usb_device *dev,
 					if_desc[ifno].\
 					ep_desc[epno].\
 					wMaxPacketSize);
-			printf("if %d, ep %d\n", ifno, epno);
+			//printf("if %d, ep %d\n", ifno, epno);
 			break;
 		case USB_DT_SS_ENDPOINT_COMP:
 			if (head->bLength != USB_DT_SS_EP_COMP_SIZE) {
@@ -594,8 +594,8 @@ int usb_get_configuration_no(struct usb_device *dev, int cfgno,
 
 	config = (struct usb_config_descriptor *)&buffer[0];
 	result = usb_get_descriptor(dev, USB_DT_CONFIG, cfgno, buffer, length);
-	printf("get_conf_no %d Result %d, wLength %d\n", cfgno, result,
-	      le16_to_cpu(config->wTotalLength));
+	//printf("get_conf_no %d Result %d, wLength %d\n", cfgno, result,
+	//      le16_to_cpu(config->wTotalLength));
 	config->wTotalLength = result; /* validated, with CPU byte order */
 
 	return result;
@@ -607,7 +607,7 @@ int usb_get_configuration_no(struct usb_device *dev, int cfgno,
  */
 static int usb_set_address(struct usb_device *dev)
 {
-	printf("set address %d\n", dev->devnum);
+	printf("[usb] set address %d\n", dev->devnum);
 
 	return usb_control_msg(dev, usb_snddefctrl(dev), USB_REQ_SET_ADDRESS,
 			       0, (dev->devnum), 0, NULL, 0, USB_CNTL_TIMEOUT);
@@ -657,7 +657,7 @@ int usb_set_interface(struct usb_device *dev, int interface, int alternate)
 static int usb_set_configuration(struct usb_device *dev, int configuration)
 {
 	int res;
-	printf("set configuration %d\n", configuration);
+	printf("[usb] set configuration %d\n", configuration);
 	/* set setup command */
 	res = usb_control_msg(dev, usb_sndctrlpipe(dev, 0),
 				USB_REQ_SET_CONFIGURATION, 0,
@@ -819,7 +819,7 @@ int usb_string(struct usb_device *dev, int index, char *buf, size_t size)
 			dev->have_langid = -1;
 			dev->string_langid = tbuf[2] | (tbuf[3] << 8);
 				/* always use the first langid listed */
-			printf("USB device number %d default " \
+			printf("[usb] USB device number %d default " \
 			      "language ID 0x%x\n",
 			      dev->devnum, dev->string_langid);
 		}
@@ -863,7 +863,7 @@ struct usb_device *usb_get_dev_index(int index)
 int usb_alloc_new_device(void *controller, struct usb_device **devp)
 {
 	int i;
-	printf("New Device %d\n", dev_index);
+	printf("[usb] new device %d\n", dev_index);
 	if (dev_index == USB_MAX_DEVICE) {
 		printf("ERROR, too many USB Devices, max=%d\n", USB_MAX_DEVICE);
 		return -ENOSPC;
@@ -1123,9 +1123,9 @@ int usb_select_config(struct usb_device *dev)
 	 */
 	mdelay(10);
 
-	printf("new device strings: Mfr=%d, Product=%d, SerialNumber=%d\n",
+	/*printf("new device strings: Mfr=%d, Product=%d, SerialNumber=%d\n",
 	      dev->descriptor.iManufacturer, dev->descriptor.iProduct,
-	      dev->descriptor.iSerialNumber);
+	      dev->descriptor.iSerialNumber);*/
 	memset(dev->mf, 0, sizeof(dev->mf));
 	memset(dev->prod, 0, sizeof(dev->prod));
 	memset(dev->serial, 0, sizeof(dev->serial));
@@ -1138,9 +1138,9 @@ int usb_select_config(struct usb_device *dev)
 	if (dev->descriptor.iSerialNumber)
 		usb_string(dev, dev->descriptor.iSerialNumber,
 			   dev->serial, sizeof(dev->serial));
-	printf("Manufacturer %s\n", dev->mf);
-	printf("Product      %s\n", dev->prod);
-	printf("SerialNumber %s\n", dev->serial);
+	printf("[usb] Manufacturer %s\n", dev->mf);
+	printf("[usb] Product      %s\n", dev->prod);
+	printf("[usb] SerialNumber %s\n", dev->serial);
 
 	return 0;
 }

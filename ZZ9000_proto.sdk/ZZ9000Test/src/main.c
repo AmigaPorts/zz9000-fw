@@ -387,6 +387,10 @@ void pixelclock_init(int mhz) {
 		mul = 27;
 		div = 2;
 		otherdiv = 50;
+	}  else if (mhz == 54) {
+		mul = 27;
+		div = 1;
+		otherdiv = 50;
 	} else if (mhz == 150) {
 		mul = 15;
 		div = 1;
@@ -395,10 +399,6 @@ void pixelclock_init(int mhz) {
 		mul = 15;
 		div = 1;
 		otherdiv = 60;
-	} else if (mhz == 27) { // 25.205
-		mul = 27;
-		div = 2;
-		otherdiv = 50;
 	} else if (mhz == 108) {
 		mul = 54;
 		div = 5;
@@ -550,9 +550,16 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz,
 #define MNT_BASE_EVENT_SERIAL	MNT_REG_BASE+0xb0
 #define MNT_BASE_EVENT_CODE		MNT_REG_BASE+0xb2
 #define MNT_BASE_FW_VERSION		MNT_REG_BASE+0xc0
+#define MNT_BASE_USBBLK_TX_HI	MNT_REG_BASE+0xd0
+#define MNT_BASE_USBBLK_TX_LO	MNT_REG_BASE+0xd2
+#define MNT_BASE_USBBLK_RX_HI	MNT_REG_BASE+0xd4
+#define MNT_BASE_USBBLK_RX_LO	MNT_REG_BASE+0xd6
+#define MNT_BASE_USB_STATUS		MNT_REG_BASE+0xd8
+#define MNT_BASE_USB_BUFSEL		MNT_REG_BASE+0xda
+#define MNT_BASE_USB_CAPACITY   MNT_REG_BASE+0xdc
 
 #define REVISION_MAJOR 1
-#define REVISION_MINOR 4
+#define REVISION_MINOR 5
 
 #define ZZVMODE_1280x720		0
 #define ZZVMODE_800x600			1
@@ -563,6 +570,7 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz,
 #define ZZVMODE_720x576			6 // 50hz
 #define ZZVMODE_1920x1080_50	7 // 50hz
 #define ZZVMODE_720x480			8
+#define ZZVMODE_640x512			9
 
 void video_mode_init(int mode, int scalemode, int colormode) {
 	int hres, vres, hmax, vmax, hstart, hend, vstart, vend, polarity, mhz, vhz, hdmi;
@@ -618,6 +626,20 @@ void video_mode_init(int mode, int scalemode, int colormode) {
 		vmax = 525;
 		polarity = 0;
 		mhz = 25;
+		vhz = 60;
+		hdmi = 0;
+		break;
+	case ZZVMODE_640x512:
+		hres = 640;
+		vres = 512;
+		hstart = 840;
+		hend = 968;
+		hmax = 1056;
+		vstart = 601;
+		vend = 605;
+		vmax = 628;
+		polarity = 0;
+		mhz = 40;
 		vhz = 60;
 		hdmi = 0;
 		break;
@@ -791,18 +813,34 @@ void sprite_reset() {
 // default to more compatible 60hz mode
 static int videocap_video_mode = ZZVMODE_800x600;
 static int video_mode = ZZVMODE_800x600 | 2 << 12 | MNTVA_COLOR_32BIT << 8;
-static int default_pan_offset = 0x00e00bd0;
+static int default_pan_offset = 0x00e00bf8;
+static char usb_storage_available = 0;
+static uint32_t usb_storage_read_block = 0;
+static uint32_t usb_storage_write_block = 0;
+
+// ethernet state
+uint16_t ethernet_send_result = 0;
+
+// usb state
+uint16_t usb_status = 0;
+// we can read or write a number of USB blocks at once, and amiga can select which one is mapped at the USB storage buffer area
+uint32_t usb_selected_buffer_block = 0;
+uint32_t usb_read_write_num_blocks = 1;
 
 void videocap_area_clear() {
 	fb_fill(0x00e00000 / 4);
 }
 
-void handle_amiga_reset() {
+void reset_default_videocap_pan() {
 	if (videocap_video_mode == ZZVMODE_800x600) {
-		default_pan_offset = 0x00e00bd0;
+		default_pan_offset = 0x00e00bf8;
 	} else {
 		default_pan_offset = 0x00e00000;
 	}
+}
+
+void handle_amiga_reset() {
+	reset_default_videocap_pan();
 
 	framebuffer_pan_offset = default_pan_offset;
 	videocap_area_clear();
@@ -820,10 +858,17 @@ void handle_amiga_reset() {
 	video_mode_init(videocap_video_mode, 2, MNTVA_COLOR_32BIT);
 	video_mode = videocap_video_mode | 2 << 12 | MNTVA_COLOR_32BIT << 8;
 
-	test_usb();
-
-	ethernet_init();
 	sprite_reset();
+	ethernet_init();
+
+	usb_storage_available = zz_usb_init();
+
+	usb_status = 0;
+	usb_selected_buffer_block = 0;
+	usb_read_write_num_blocks = 1;
+	ethernet_send_result = 0;
+
+	// FIXME there should be more state to be reset
 }
 
 uint16_t arm_app_output_event_serial = 0;
@@ -1038,9 +1083,6 @@ int main() {
 	arm_run_env.argc = 0;
 	uint32_t arm_run_address = 0;
 
-	// ethernet state
-	uint16_t ethernet_send_result = 0;
-
 	// zorro state
 	u32 zstate_raw;
 	int interlace_old = 0;
@@ -1106,12 +1148,14 @@ int main() {
 					ptr = mem + zaddr - MNT_FB_BASE;
 				} else if (zaddr < MNT_REG_BASE + 0x8000) {
 					// FIXME remove
-					ptr = (u8*) (RX_FRAME_ADDRESS + zaddr
-							- (MNT_REG_BASE + 0x2000));
-					printf("ERXF write: %08lx\n", (u32) ptr);
+					ptr = (u8*) (RX_FRAME_ADDRESS + zaddr - (MNT_REG_BASE + 0x2000));
+					//printf("ERXF write: %08lx\n", (u32) ptr);
+				} else if (zaddr < MNT_REG_BASE + 0xa000) {
+					ptr = (u8*) (TX_FRAME_ADDRESS + zaddr - (MNT_REG_BASE + 0x8000));
 				} else if (zaddr < MNT_REG_BASE + 0x10000) {
-					ptr = (u8*) (TX_FRAME_ADDRESS + zaddr
-							- (MNT_REG_BASE + 0x8000));
+					// 0xa000-0xafff: write to block device (usb storage)
+					// TODO: this should be moved to DMA space?
+					ptr = (u8*) (USB_BLOCK_STORAGE_ADDRESS + zaddr - (MNT_REG_BASE + 0xa000) + usb_selected_buffer_block * 512);
 				}
 
 				// FIXME cache this
@@ -1496,6 +1540,47 @@ int main() {
 					ethernet_update_mac_address();
 					break;
 				}
+				case MNT_BASE_USBBLK_TX_HI: {
+					usb_storage_write_block = ((u32) zdata) << 16;
+					break;
+				}
+				case MNT_BASE_USBBLK_TX_LO: {
+					usb_storage_write_block |= zdata;
+					if (usb_storage_available) {
+						usb_status = zz_usb_write_blocks(0, usb_storage_write_block, usb_read_write_num_blocks, (void*)USB_BLOCK_STORAGE_ADDRESS);
+					} else {
+						printf("[USB] TX but no storage available!\n");
+					}
+					break;
+				}
+				case MNT_BASE_USBBLK_RX_HI: {
+					usb_storage_read_block = ((u32) zdata) << 16;
+					break;
+				}
+				case MNT_BASE_USBBLK_RX_LO: {
+					usb_storage_read_block |= zdata;
+					if (usb_storage_available) {
+						usb_status = zz_usb_read_blocks(0, usb_storage_read_block, usb_read_write_num_blocks, (void*)USB_BLOCK_STORAGE_ADDRESS);
+					} else {
+						printf("[USB] RX but no storage available!\n");
+					}
+					break;
+				}
+				case MNT_BASE_USB_STATUS: {
+					//printf("[USB] write to status/blocknum register: %d\n", zdata);
+					if (zdata==0) {
+						// reset USB
+						// FIXME memory leaks?
+						//usb_storage_available = zz_usb_init();
+					} else {
+						// set number of blocks to read/write at once
+						usb_read_write_num_blocks = zdata;
+					}
+				}
+				case MNT_BASE_USB_BUFSEL: {
+					//printf("[USB] select buffer: %d\n", zdata);
+					usb_selected_buffer_block = zdata;
+				}
 
 				// ARM core 2 execution
 				case MNT_BASE_RUN_HI:
@@ -1598,17 +1683,22 @@ int main() {
 				u8* ptr = mem;
 
 				if (zaddr >= MNT_FB_BASE) {
+					// read from framebuffer / generic memory
 					ptr = mem + zaddr - MNT_FB_BASE;
 				} else if (zaddr < MNT_REG_BASE + 0x8000) {
+					// 0x2000-0x7fff: FIXME: waste of address space
+					// read from ethernet RX frame
 					// disable INT6 interrupt
-					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2,
-							(1 << 30) | 0);
-					ptr = (u8*) (ethernet_current_receive_ptr() + zaddr
-							- (MNT_REG_BASE + 0x2000));
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1 << 30) | 0);
+					ptr = (u8*) (ethernet_current_receive_ptr() + zaddr - (MNT_REG_BASE + 0x2000));
+				} else if (zaddr < MNT_REG_BASE + 0xa000) {
+					// 0x8000-0x9fff: read from TX frame (unusual)
+					ptr = (u8*) (TX_FRAME_ADDRESS + zaddr - (MNT_REG_BASE + 0x8000));
+					//printf("ETXF read: %08lx\n", (u32) ptr);
 				} else if (zaddr < MNT_REG_BASE + 0x10000) {
-					ptr = (u8*) (TX_FRAME_ADDRESS + zaddr
-							- (MNT_REG_BASE + 0x8000));
-					printf("ETXF read: %08lx\n", (u32) ptr);
+					// 0xa000-0xafff: read from block device (usb storage)
+					// TODO: this should be moved to DMA space?
+					ptr = (u8*) (USB_BLOCK_STORAGE_ADDRESS + zaddr - (MNT_REG_BASE + 0xa000) + usb_selected_buffer_block * 512);
 				}
 
 				if (z3) {
@@ -1640,10 +1730,21 @@ int main() {
 					uint8_t* mac = ethernet_get_mac_address_ptr();
 					data = mac[4] << 24 | mac[5] << 16;
 				} else if (zaddr32 == MNT_BASE_ETH_TX) {
+					// FIXME this is probably wrong (doesn't need swapping?)
 					data = (ethernet_send_result & 0xff) << 24
 							| (ethernet_send_result & 0xff00) << 16;
 				} else if (zaddr32 == MNT_BASE_FW_VERSION) {
 					data = (REVISION_MAJOR << 24 | REVISION_MINOR << 16);
+				} else if (zaddr32 == MNT_BASE_USB_STATUS) {
+					data = usb_status << 16;
+				} else if (zaddr32 == MNT_BASE_USB_CAPACITY) {
+					if (usb_storage_available) {
+						printf("[USB] query capacity: %lx\n",zz_usb_storage_capacity(0));
+						data = zz_usb_storage_capacity(0);
+					} else {
+						printf("[USB] query capacity: no device.\n");
+						data = 0;
+					}
 				}
 
 				if (z3) {
@@ -1654,8 +1755,7 @@ int main() {
 						mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, data);
 					} else {
 						// upper 16 bit
-						mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1,
-								data >> 16);
+						mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, data >> 16);
 					}
 				}
 			}
@@ -1703,12 +1803,7 @@ int main() {
 						video_mode_init(ZZVMODE_720x480, 2, MNTVA_COLOR_32BIT);
 					} else {
 						// PAL
-						// FIXME duplication
-						if (videocap_video_mode == ZZVMODE_800x600) {
-							default_pan_offset = 0x00e00bd0;
-						} else {
-							default_pan_offset = 0x00e00000;
-						}
+						reset_default_videocap_pan();
 						framebuffer_pan_offset = default_pan_offset;
 						video_mode_init(videocap_video_mode, 2, MNTVA_COLOR_32BIT);
 					}

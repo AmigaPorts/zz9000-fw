@@ -176,7 +176,7 @@ static int handshake(uint32_t *ptr, uint32_t mask, uint32_t done, int usec)
 	uint32_t result;
 	do {
 		result = ehci_readl(ptr);
-		udelay(5); // FIXME
+		udelay(5);
 		if (result == ~(uint32_t)0)
 			return -1;
 		result &= mask;
@@ -256,7 +256,7 @@ static int ehci_td_buffer(struct qTD *td, void *buf, size_t sz)
 	int idx;
 
 	if (addr != ALIGN(addr, ARCH_DMA_MINALIGN))
-		printf("EHCI-HCD: Misaligned buffer address (%p)\n", buf);
+		printf("EHCI-HCD: Misaligned buffer address (%p vs %x)\n", buf, ALIGN(addr, ARCH_DMA_MINALIGN));
 
 	flush_dcache_range(addr, ALIGN(addr + sz, ARCH_DMA_MINALIGN));
 
@@ -326,8 +326,8 @@ ehci_submit_async(struct usb_device *dev, unsigned long pipe, void *buffer,
 	int ret = 0;
 	struct ehci_ctrl *ctrl = ehci_get_ctrl(dev);
 
-	printf("dev=%p, pipe=%lx, buffer=%p, length=%d, req=%p\n", dev, pipe,
-	      buffer, length, req);
+	//printf("dev=%p, pipe=%lx, buffer=%p, length=%d, req=%p\n", dev, pipe,
+	//      buffer, length, req);
 	/*if (req != NULL)
 		printf("req=%u (%#x), type=%u (%#x), value=%u (%#x), index=%u\n",
 		      req->request, req->request,
@@ -397,7 +397,7 @@ ehci_submit_async(struct usb_device *dev, unsigned long pipe, void *buffer,
 
 	// FIXME needs 128kB ram?
 
-	qtd = memalign(USB_DMA_MINALIGN, qtd_count * sizeof(struct qTD));
+	qtd = memalign(USB_DMA_MINALIGN, qtd_count * sizeof(struct qTD)); // FIXME dynamic allocation
 	if (qtd == NULL) {
 		printf("unable to allocate TDs\n");
 		return -1;
@@ -635,7 +635,7 @@ ehci_submit_async(struct usb_device *dev, unsigned long pipe, void *buffer,
 
 	token = hc32_to_cpu(qh->qh_overlay.qt_token);
 	if (!(QT_TOKEN_GET_STATUS(token) & QT_TOKEN_STATUS_ACTIVE)) {
-		printf("TOKEN=%#lx\n", token);
+		//printf("TOKEN=%#lx\n", token);
 		switch (QT_TOKEN_GET_STATUS(token) &
 			~(QT_TOKEN_STATUS_SPLITXSTATE | QT_TOKEN_STATUS_PERR)) {
 		case 0:
@@ -664,12 +664,10 @@ ehci_submit_async(struct usb_device *dev, unsigned long pipe, void *buffer,
 		dev->act_len = length - QT_TOKEN_GET_TOTALBYTES(token);
 	} else {
 		dev->act_len = 0;
-#ifndef CONFIG_USB_EHCI_FARADAY
-		printf("dev=%u, usbsts=%#lx, p[1]=%#lx, p[2]=%#lx\n",
-		      dev->devnum, ehci_readl(&ctrl->hcor->or_usbsts),
-		      ehci_readl(&ctrl->hcor->or_portsc[0]),
-		      ehci_readl(&ctrl->hcor->or_portsc[1]));
-#endif
+		//printf("dev=%u, usbsts=%#lx, p[1]=%#lx, p[2]=%#lx\n",
+		//      dev->devnum, ehci_readl(&ctrl->hcor->or_usbsts),
+		//      ehci_readl(&ctrl->hcor->or_portsc[0]),
+		//      ehci_readl(&ctrl->hcor->or_portsc[1]));
 	}
 
 	free(qtd);
@@ -718,19 +716,19 @@ static int ehci_submit_root(struct usb_device *dev, unsigned long pipe,
 	case DeviceRequest | USB_REQ_GET_DESCRIPTOR:
 		switch (le16_to_cpu(req->value) >> 8) {
 		case USB_DT_DEVICE:
-			printf("USB_DT_DEVICE request\n");
+			//printf("USB_DT_DEVICE request\n");
 			srcptr = &descriptor.device;
 			srclen = descriptor.device.bLength;
 			break;
 		case USB_DT_CONFIG:
-			printf("USB_DT_CONFIG config\n");
+			//printf("USB_DT_CONFIG config\n");
 			srcptr = &descriptor.config;
 			srclen = descriptor.config.bLength +
 					descriptor.interface.bLength +
 					descriptor.endpoint.bLength;
 			break;
 		case USB_DT_STRING:
-			printf("USB_DT_STRING config\n");
+			//printf("USB_DT_STRING config\n");
 			switch (le16_to_cpu(req->value) & 0xff) {
 			case 0:	/* Language */
 				srcptr = "\4\3\1\0";
@@ -760,7 +758,7 @@ static int ehci_submit_root(struct usb_device *dev, unsigned long pipe,
 	case USB_REQ_GET_DESCRIPTOR | ((USB_DIR_IN | USB_RT_HUB) << 8):
 		switch (le16_to_cpu(req->value) >> 8) {
 		case USB_DT_HUB:
-			printf("USB_DT_HUB config\n");
+			//printf("[ehci] USB_DT_HUB config\n");
 			srcptr = &descriptor.hub;
 			srclen = descriptor.hub.bLength;
 			break;
@@ -770,11 +768,11 @@ static int ehci_submit_root(struct usb_device *dev, unsigned long pipe,
 		}
 		break;
 	case USB_REQ_SET_ADDRESS | (USB_RECIP_DEVICE << 8):
-		printf("USB_REQ_SET_ADDRESS\n");
+		//printf("USB_REQ_SET_ADDRESS\n");
 		ctrl->rootdev = le16_to_cpu(req->value);
 		break;
 	case DeviceOutRequest | USB_REQ_SET_CONFIGURATION:
-		printf("USB_REQ_SET_CONFIGURATION\n");
+		//printf("USB_REQ_SET_CONFIGURATION\n");
 		/* Nothing to do */
 		break;
 	case USB_REQ_GET_STATUS | ((USB_DIR_IN | USB_RT_HUB) << 8):
@@ -947,8 +945,8 @@ static int ehci_submit_root(struct usb_device *dev, unsigned long pipe,
 	len = min3(srclen, (int)le16_to_cpu(req->length), length);
 	if (srcptr != NULL && len > 0)
 		memcpy(buffer, srcptr, len);
-	else
-		printf("[ehci] Len is 0\n");
+	//else
+	//	printf("[ehci] Len is 0\n");
 
 	dev->act_len = len;
 	dev->status = 0;
@@ -1056,10 +1054,12 @@ static int ehci_common_init(struct ehci_ctrl *ctrl, unsigned int tweaks)
 	 *         S-mask and C-mask.
 	 */
 	if (ctrl->periodic_list == NULL)
-		ctrl->periodic_list = memalign(4096, 1024 * 4);
+		ctrl->periodic_list = memalign(4096, 1024 * 4); // FIXME dynamic allocation
 
-	if (!ctrl->periodic_list)
+	if (!ctrl->periodic_list) {
+		printf("[ehci_common_init] ENOMEM\n");
 		return -ENOMEM;
+	}
 	for (i = 0; i < 1024; i++) {
 		ctrl->periodic_list[i] = cpu_to_hc32((unsigned long)periodic
 						| QH_LINK_TYPE_QH);
@@ -1293,7 +1293,7 @@ static struct int_queue *_ehci_create_int_queue(struct usb_device *dev,
 		return NULL;
 	}
 
-	result = malloc(sizeof(*result));
+	result = malloc(sizeof(*result));  // FIXME dynamic allocation
 	if (!result) {
 		printf("ehci intr queue: out of memory\n");
 		goto fail1;
@@ -1301,7 +1301,7 @@ static struct int_queue *_ehci_create_int_queue(struct usb_device *dev,
 	result->elementsize = elementsize;
 	result->pipe = pipe;
 	result->first = memalign(USB_DMA_MINALIGN,
-				 sizeof(struct QH) * queuesize);
+				 sizeof(struct QH) * queuesize); // FIXME dynamic allocation
 	if (!result->first) {
 		printf("ehci intr queue: out of memory\n");
 		goto fail2;
@@ -1309,7 +1309,7 @@ static struct int_queue *_ehci_create_int_queue(struct usb_device *dev,
 	result->current = result->first;
 	result->last = result->first + queuesize - 1;
 	result->tds = memalign(USB_DMA_MINALIGN,
-			       sizeof(struct qTD) * queuesize);
+			       sizeof(struct qTD) * queuesize); // FIXME dynamic allocation
 	if (!result->tds) {
 		printf("ehci intr queue: out of memory\n");
 		goto fail3;
@@ -1513,8 +1513,8 @@ static int _ehci_submit_int_msg(struct usb_device *dev, unsigned long pipe,
 	unsigned long timeout;
 	int result = 0, ret;
 
-	printf("dev=%p, pipe=%lu, buffer=%p, length=%d, interval=%d",
-	      dev, pipe, buffer, length, interval);
+	//printf("dev=%p, pipe=%lu, buffer=%p, length=%d, interval=%d",
+	//      dev, pipe, buffer, length, interval);
 
 	queue = _ehci_create_int_queue(dev, pipe, 1, length, buffer, interval);
 	if (!queue)

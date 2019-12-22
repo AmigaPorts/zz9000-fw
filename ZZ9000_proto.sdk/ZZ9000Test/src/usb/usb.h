@@ -49,7 +49,7 @@
  * This is the timeout to allow for submitting an urb in ms. We allow more
  * time for a BULK device to react - some are slow.
  */
-#define USB_TIMEOUT_MS(pipe) (usb_pipebulk(pipe) ? 5000 : 1000)
+#define USB_TIMEOUT_MS(pipe) (usb_pipebulk(pipe) ? 20000 : 4000) // FIXME quadrupled
 
 /* device request (setup) */
 struct devrequest {
@@ -221,13 +221,12 @@ int board_usb_init(int index, enum usb_init_type init);
  */
 int board_usb_cleanup(int index, enum usb_init_type init);
 
-#ifdef CONFIG_USB_STORAGE
-
-#define USB_MAX_STOR_DEV 7
+#define USB_MAX_STOR_DEV 1
 int usb_stor_scan(int mode);
 int usb_stor_info(void);
-
-#endif
+unsigned long usb_stor_read_direct(int dev_index, unsigned long blknr, unsigned long blkcnt, void *buffer);
+unsigned long usb_stor_write_direct(int dev_index, unsigned long blknr, unsigned long blkcnt, void *buffer);
+unsigned long usb_stor_get_capacity(int dev_index);
 
 #ifdef CONFIG_USB_HOST_ETHER
 
@@ -257,7 +256,7 @@ int usb_control_msg(struct usb_device *dev, unsigned int pipe,
 			void *data, unsigned short size, int timeout);
 int usb_bulk_msg(struct usb_device *dev, unsigned int pipe,
 			void *data, int len, int *actual_length, int timeout);
-int usb_submit_int_msg(struct usb_device *dev, unsigned long pipe,
+int usb_int_msg(struct usb_device *dev, unsigned long pipe,
 			void *buffer, int transfer_len, int interval);
 int usb_disable_asynch(int disable);
 int usb_maxpacket(struct usb_device *dev, unsigned long pipe);

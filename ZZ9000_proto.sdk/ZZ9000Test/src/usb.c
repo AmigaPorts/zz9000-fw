@@ -25,6 +25,8 @@
 #include "xparameters.h"
 #include <xscugic.h>
 #include "usb/ehci.h"
+#include "usb/usb.h"
+#include "ethernet.h"
 
 struct zynq_ehci_priv _zynq_ehci;
 
@@ -38,10 +40,34 @@ capabilities by an exchange of device requests. The requests that the host uses 
 standard requests and must support these requests on all USB devices."
  */
 
-void test_usb() {
+// returns 1 if storage device available
+int zz_usb_init() {
 	printf("[USB] trying to probe zynq ehci...\n");
 	ehci_zynq_probe(&_zynq_ehci);
 	printf("[USB] probed!\n");
 	usb_init();
 	printf("[USB] initialized!\n");
+
+	if (!usb_stor_scan(1)) {
+		return 1;
+	}
+	return 0;
+}
+
+unsigned long zz_usb_read_blocks(int dev_index, unsigned long blknr, unsigned long blkcnt, void *buffer) {
+	int res = usb_stor_read_direct(dev_index, blknr, blkcnt, buffer);
+	//printf("[USB] read %lu blocks at %lu: %d\n",blkcnt,blknr,res);
+	return res;
+}
+
+unsigned long zz_usb_write_blocks(int dev_index, unsigned long blknr, unsigned long blkcnt, void *buffer) {
+	int res = usb_stor_write_direct(dev_index, blknr, blkcnt, buffer);
+	//printf("[USB] write %lu blocks at %lu: %d\n",blkcnt,blknr,res);
+	return res;
+}
+
+unsigned long zz_usb_storage_capacity(int dev_index) {
+	unsigned long cap = usb_stor_get_capacity(dev_index);
+	printf("[USB] get capacity: %lx\n",cap);
+	return cap;
 }

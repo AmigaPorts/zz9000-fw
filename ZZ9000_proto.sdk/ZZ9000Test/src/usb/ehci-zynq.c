@@ -53,7 +53,7 @@ int ehci_zynq_probe(struct zynq_ehci_priv *priv)
 	hccr = (struct ehci_hccr *)((uint32_t)&priv->ehci->caplength);
 	hcor = (struct ehci_hcor *)((uint32_t) hccr + HC_LENGTH(ehci_readl(&hccr->cr_capbase)));
 
-	printf("[ehci-zynq] hccr: %p hcor: %p\n", hccr, hcor);
+	//printf("[ehci-zynq] hccr: %p hcor: %p\n", hccr, hcor);
 
 	priv->ehcictrl.hccr = hccr;
 	priv->ehcictrl.hcor = hcor;
@@ -61,8 +61,7 @@ int ehci_zynq_probe(struct zynq_ehci_priv *priv)
 	ulpi_vp.viewport_addr = (u32)&priv->ehci->ulpi_viewpoint;
 	ulpi_vp.port_num = 0;
 
-	printf("[ehci-zynq] viewport_addr: %p\n", &priv->ehci->ulpi_viewpoint);
-
+	//printf("[ehci-zynq] viewport_addr: %p\n", &priv->ehci->ulpi_viewpoint);
 
 	// lifted from https://elixir.bootlin.com/u-boot/latest/source/drivers/usb/host/ehci-fsl.c#L275
 	/* Set to Host mode */
@@ -70,29 +69,14 @@ int ehci_zynq_probe(struct zynq_ehci_priv *priv)
 
 	// FIXME: need to figure out which of these are necessary
 
-	//printf("[ehci-zynq] 1\n");
-	//out_be32(&ehci->snoop1, SNOOP_SIZE_2GB);
-	//printf("[ehci-zynq] 2\n");
-	//out_be32(&ehci->snoop2, 0x80000000 | SNOOP_SIZE_2GB);
-	printf("[ehci-zynq] 3\n");
 	setbits_le32(&ehci->portsc, USB_EN);
-	// following crashes
-	//clrsetbits_be32(&ehci->control, CONTROL_REGISTER_W1C_MASK, PHY_CLK_SEL_ULPI);
-	printf("[ehci-zynq] 4\n");
-	//clrsetbits_be32(&ehci->control, UTMI_PHY_EN | CONTROL_REGISTER_W1C_MASK, USB_EN);
-	printf("[ehci-zynq] 5\n");
 	usleep(1000); /* delay required for PHY Clk to appear */
-	printf("[ehci-zynq] 6\n");
 	out_le32(&(hcor)->or_portsc[0], PORT_PTS_ULPI);
 
-	printf("[ehci-zynq] 7\n");
 	out_be32(&ehci->prictrl, 0x0000000c);
-	printf("[ehci-zynq] 8\n");
 	out_be32(&ehci->age_cnt_limit, 0x00000040);
-	printf("[ehci-zynq] 9\n");
 	out_be32(&ehci->sictrl, 0x00000001);
 
-	printf("[ehci-zynq] 10\n");
 	in_le32(&ehci->usbmode);
 
 	/* ULPI set flags */
