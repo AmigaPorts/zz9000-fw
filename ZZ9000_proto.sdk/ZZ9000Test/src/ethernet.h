@@ -28,12 +28,14 @@ int ethernet_get_backlog();
 
 // FIXME allocate this memory properly
 
-#define RX_BD_LIST_START_ADDRESS	0x02108000
-#define TX_BD_LIST_START_ADDRESS	0x02100000
-#define RX_FRAME_ADDRESS            0x02120000
-#define RX_BACKLOG_ADDRESS          0x02200000
-#define TX_FRAME_ADDRESS            0x02110000
+#define TX_BD_LIST_START_ADDRESS	0x03100000
+#define RX_BD_LIST_START_ADDRESS	0x03108000
+#define TX_FRAME_ADDRESS            0x03110000
+#define RX_FRAME_ADDRESS            0x03120000
+#define RX_BACKLOG_ADDRESS          0x03200000 // 32 * 2048 space (64 kB)
+#define USB_BLOCK_STORAGE_ADDRESS   0x04000000 // FIXME move all of these to a memory table header file
 #define RX_FRAME_PAD 4
+#define FRAME_SIZE 2048
 
 #define FRAME_MAX_BACKLOG 32
 
