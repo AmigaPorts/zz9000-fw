@@ -557,6 +557,7 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz,
 #define MNT_BASE_USB_STATUS		MNT_REG_BASE+0xd8
 #define MNT_BASE_USB_BUFSEL		MNT_REG_BASE+0xda
 #define MNT_BASE_USB_CAPACITY   MNT_REG_BASE+0xdc
+#define MNT_BASE_DEBUG          MNT_REG_BASE+0xfc
 
 #define REVISION_MAJOR 1
 #define REVISION_MINOR 5
@@ -826,6 +827,8 @@ uint16_t usb_status = 0;
 // we can read or write a number of USB blocks at once, and amiga can select which one is mapped at the USB storage buffer area
 uint32_t usb_selected_buffer_block = 0;
 uint32_t usb_read_write_num_blocks = 1;
+// debug things like individual reads/writes, greatly slowing the system down
+uint32_t debug_lowlevel = 0;
 
 void videocap_area_clear() {
 	fb_fill(0x00e00000 / 4);
@@ -1137,7 +1140,9 @@ int main() {
 			u32 ds1 = (zstate_raw & (1 << 27));
 			u32 ds0 = (zstate_raw & (1 << 26));
 
-			//printf("WRTE: %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
+			if (debug_lowlevel) {
+				printf("WRTE: %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
+			}
 
 			if (zaddr > 0x10000000) {
 				printf("ERRW illegal address %08lx\n", zaddr);
@@ -1576,10 +1581,16 @@ int main() {
 						// set number of blocks to read/write at once
 						usb_read_write_num_blocks = zdata;
 					}
+					break;
 				}
 				case MNT_BASE_USB_BUFSEL: {
 					//printf("[USB] select buffer: %d\n", zdata);
 					usb_selected_buffer_block = zdata;
+					break;
+				}
+				case MNT_BASE_DEBUG: {
+					debug_lowlevel = zdata;
+					break;
 				}
 
 				// ARM core 2 execution
@@ -1673,7 +1684,10 @@ int main() {
 			need_req_ack = 1;
 		} else if (readreq) {
 			uint32_t zaddr = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG0);
-			//printf("READ: %08lx\n",zaddr);
+
+			if (debug_lowlevel) {
+				printf("READ: %08lx\n",zaddr);
+			}
 			u32 z3 = (zstate_raw & (1 << 25)); // TODO cache
 
 			if (zaddr > 0x10000000) {
