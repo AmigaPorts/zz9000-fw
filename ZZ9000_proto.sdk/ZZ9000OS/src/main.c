@@ -222,7 +222,7 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 
 	XAxiVdma_DmaSetup ReadCfg;
 
-	printf("VDMA HDIV: %d VDIV: %d\n", hdiv, vdiv);
+	//printf("VDMA HDIV: %d VDIV: %d\n", hdiv, vdiv);
 
 	ReadCfg.VertSizeInput = vsize / vdiv;
 	ReadCfg.HoriSizeInput = stride / hdiv; // note: changing this breaks the output
@@ -236,7 +236,7 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 
 	ReadCfg.FrameStoreStartAddr[0] = (u32) framebuffer + framebuffer_pan_offset;
 
-	printf("VDMA Framebuffer at 0x%x\n", ReadCfg.FrameStoreStartAddr[0]);
+	//printf("VDMA Framebuffer at 0x%x\n", ReadCfg.FrameStoreStartAddr[0]);
 
 	status = XAxiVdma_DmaConfig(&vdma, XAXIVDMA_READ, &ReadCfg);
 	if (status != XST_SUCCESS) {
@@ -522,7 +522,7 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz,
 #define MNT_BASE_SPRITEY			MNT_REG_BASE+0x08
 #define MNT_BASE_PAN_HI 			MNT_REG_BASE+0x0a
 #define MNT_BASE_PAN_LO 			MNT_REG_BASE+0x0c
-#define MNT_BASE_UNUSED   			MNT_REG_BASE+0x0e
+#define MNT_BASE_VCAP_VMODE			MNT_REG_BASE+0x0e
 #define MNT_BASE_RECTOP 			MNT_REG_BASE+0x10
 #define MNT_BASE_BLIT_SRC_HI 		MNT_REG_BASE+0x28
 #define MNT_BASE_BLIT_SRC_LO 		MNT_REG_BASE+0x2a
@@ -1244,6 +1244,11 @@ int main() {
 					// remember selected video mode
 					video_mode = zdata;
 					break;
+				case MNT_BASE_VCAP_VMODE:
+					printf("videocap default mode select: %lx\n", zdata);
+
+					videocap_video_mode = zdata &0xff;
+					break;
 				case MNT_BASE_SPRITEX:
 				case MNT_BASE_SPRITEY:
 					if (!sprite_enabled)
@@ -1799,12 +1804,6 @@ int main() {
 
 				if (!videocap_enabled_old) {
 					videocap_area_clear();
-
-					if (!videocap_ntsc) {
-						// remember current video mode as desired video capture video mode for PAL
-						videocap_video_mode = video_mode & 0xff;
-					}
-
 					videocap_ntsc_old = 0;
 				}
 
@@ -1827,14 +1826,17 @@ int main() {
 				int interlace = !!(zstate_raw & (1 << 24));
 				if (interlace != interlace_old) {
 					// interlace has changed, we need to reconfigure vdma for the new screen height
-					int vdiv = 2;
+					vmode_vdiv = 2;
 					if (interlace) {
-						vdiv = 1;
+						vmode_vdiv = 1;
 					}
 					videocap_area_clear();
-					init_vdma(vmode_hsize, vmode_vsize, 1, vdiv);
+					init_vdma(vmode_hsize, vmode_vsize, 1, vmode_vdiv);
 					video_formatter_valign();
-					printf("videocap interlace mode changed.\n");
+					printf("videocap interlace mode changed to %d.\n", interlace);
+
+					// avoid multiple video re-alignments in the same cycle
+					request_video_align = 0;
 				}
 				interlace_old = interlace;
 			}
