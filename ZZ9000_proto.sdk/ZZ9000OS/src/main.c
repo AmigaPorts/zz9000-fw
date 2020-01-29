@@ -32,6 +32,7 @@
 
 #include "gfx.h"
 #include "ethernet.h"
+#include "usb.h"
 #include "xgpiops.h"
 
 #include "xil_misc_psreset_api.h"
@@ -221,7 +222,7 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 
 	XAxiVdma_DmaSetup ReadCfg;
 
-	printf("VDMA HDIV: %d VDIV: %d\n", hdiv, vdiv);
+	//printf("VDMA HDIV: %d VDIV: %d\n", hdiv, vdiv);
 
 	ReadCfg.VertSizeInput = vsize / vdiv;
 	ReadCfg.HoriSizeInput = stride / hdiv; // note: changing this breaks the output
@@ -235,7 +236,7 @@ int init_vdma(int hsize, int vsize, int hdiv, int vdiv) {
 
 	ReadCfg.FrameStoreStartAddr[0] = (u32) framebuffer + framebuffer_pan_offset;
 
-	printf("VDMA Framebuffer at 0x%x\n", ReadCfg.FrameStoreStartAddr[0]);
+	//printf("VDMA Framebuffer at 0x%x\n", ReadCfg.FrameStoreStartAddr[0]);
 
 	status = XAxiVdma_DmaConfig(&vdma, XAXIVDMA_READ, &ReadCfg);
 	if (status != XST_SUCCESS) {
@@ -386,6 +387,10 @@ void pixelclock_init(int mhz) {
 		mul = 27;
 		div = 2;
 		otherdiv = 50;
+	}  else if (mhz == 54) {
+		mul = 27;
+		div = 1;
+		otherdiv = 50;
 	} else if (mhz == 150) {
 		mul = 15;
 		div = 1;
@@ -394,10 +399,6 @@ void pixelclock_init(int mhz) {
 		mul = 15;
 		div = 1;
 		otherdiv = 60;
-	} else if (mhz == 27) { // 25.205
-		mul = 27;
-		div = 2;
-		otherdiv = 50;
 	} else if (mhz == 108) {
 		mul = 54;
 		div = 5;
@@ -521,7 +522,7 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz,
 #define MNT_BASE_SPRITEY			MNT_REG_BASE+0x08
 #define MNT_BASE_PAN_HI 			MNT_REG_BASE+0x0a
 #define MNT_BASE_PAN_LO 			MNT_REG_BASE+0x0c
-#define MNT_BASE_UNUSED   			MNT_REG_BASE+0x0e
+#define MNT_BASE_VCAP_VMODE			MNT_REG_BASE+0x0e
 #define MNT_BASE_RECTOP 			MNT_REG_BASE+0x10
 #define MNT_BASE_BLIT_SRC_HI 		MNT_REG_BASE+0x28
 #define MNT_BASE_BLIT_SRC_LO 		MNT_REG_BASE+0x2a
@@ -549,9 +550,17 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz,
 #define MNT_BASE_EVENT_SERIAL	MNT_REG_BASE+0xb0
 #define MNT_BASE_EVENT_CODE		MNT_REG_BASE+0xb2
 #define MNT_BASE_FW_VERSION		MNT_REG_BASE+0xc0
+#define MNT_BASE_USBBLK_TX_HI	MNT_REG_BASE+0xd0
+#define MNT_BASE_USBBLK_TX_LO	MNT_REG_BASE+0xd2
+#define MNT_BASE_USBBLK_RX_HI	MNT_REG_BASE+0xd4
+#define MNT_BASE_USBBLK_RX_LO	MNT_REG_BASE+0xd6
+#define MNT_BASE_USB_STATUS		MNT_REG_BASE+0xd8
+#define MNT_BASE_USB_BUFSEL		MNT_REG_BASE+0xda
+#define MNT_BASE_USB_CAPACITY   MNT_REG_BASE+0xdc
+#define MNT_BASE_DEBUG          MNT_REG_BASE+0xfc
 
 #define REVISION_MAJOR 1
-#define REVISION_MINOR 4
+#define REVISION_MINOR 5
 
 #define ZZVMODE_1280x720		0
 #define ZZVMODE_800x600			1
@@ -562,6 +571,7 @@ void video_system_init(int hres, int vres, int htotal, int vtotal, int mhz,
 #define ZZVMODE_720x576			6 // 50hz
 #define ZZVMODE_1920x1080_50	7 // 50hz
 #define ZZVMODE_720x480			8
+#define ZZVMODE_640x512			9
 
 void video_mode_init(int mode, int scalemode, int colormode) {
 	int hres, vres, hmax, vmax, hstart, hend, vstart, vend, polarity, mhz, vhz, hdmi;
@@ -617,6 +627,20 @@ void video_mode_init(int mode, int scalemode, int colormode) {
 		vmax = 525;
 		polarity = 0;
 		mhz = 25;
+		vhz = 60;
+		hdmi = 0;
+		break;
+	case ZZVMODE_640x512:
+		hres = 640;
+		vres = 512;
+		hstart = 840;
+		hend = 968;
+		hmax = 1056;
+		vstart = 601;
+		vend = 605;
+		vmax = 628;
+		polarity = 0;
+		mhz = 40;
 		vhz = 60;
 		hdmi = 0;
 		break;
@@ -720,9 +744,12 @@ void video_mode_init(int mode, int scalemode, int colormode) {
 	vmode_hdiv = hdiv;
 }
 
-uint16_t sprite_x = 0;
-uint16_t sprite_y = 0;
+int16_t sprite_x = 0, sprite_x_adj = 0;
+int16_t sprite_y = 0, sprite_y_adj = 0;
 uint16_t sprite_enabled = 0;
+uint32_t sprite_buf[32 * 48];
+uint8_t sprite_clipped = 0;
+int16_t sprite_clip_x = 0, sprite_clip_y = 0;
 
 int8_t sprite_x_offset = 0;
 int8_t sprite_y_offset = 0;
@@ -756,11 +783,11 @@ void sprite_hide() {
 	sprite_x = 2000;
 	sprite_y = 2000;
 	sprite_enabled = 0;
+	video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 }
 
 void sprite_reset() {
 	sprite_hide();
-	video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 
 	for (int y=0; y<16; y++) {
 		for (int x=0; x<16; x++) {
@@ -787,18 +814,36 @@ void sprite_reset() {
 // default to more compatible 60hz mode
 static int videocap_video_mode = ZZVMODE_800x600;
 static int video_mode = ZZVMODE_800x600 | 2 << 12 | MNTVA_COLOR_32BIT << 8;
-static int default_pan_offset = 0x00e00bd0;
+static int default_pan_offset = 0x00e00bf8;
+static char usb_storage_available = 0;
+static uint32_t usb_storage_read_block = 0;
+static uint32_t usb_storage_write_block = 0;
+
+// ethernet state
+uint16_t ethernet_send_result = 0;
+
+// usb state
+uint16_t usb_status = 0;
+// we can read or write a number of USB blocks at once, and amiga can select which one is mapped at the USB storage buffer area
+uint32_t usb_selected_buffer_block = 0;
+uint32_t usb_read_write_num_blocks = 1;
+// debug things like individual reads/writes, greatly slowing the system down
+uint32_t debug_lowlevel = 0;
 
 void videocap_area_clear() {
 	fb_fill(0x00e00000 / 4);
 }
 
-void handle_amiga_reset() {
+void reset_default_videocap_pan() {
 	if (videocap_video_mode == ZZVMODE_800x600) {
-		default_pan_offset = 0x00e00bd0;
+		default_pan_offset = 0x00e00bf8;
 	} else {
 		default_pan_offset = 0x00e00000;
 	}
+}
+
+void handle_amiga_reset() {
+	reset_default_videocap_pan();
 
 	framebuffer_pan_offset = default_pan_offset;
 	videocap_area_clear();
@@ -816,8 +861,17 @@ void handle_amiga_reset() {
 	video_mode_init(videocap_video_mode, 2, MNTVA_COLOR_32BIT);
 	video_mode = videocap_video_mode | 2 << 12 | MNTVA_COLOR_32BIT << 8;
 
-	ethernet_init();
 	sprite_reset();
+	ethernet_init();
+
+	usb_storage_available = zz_usb_init();
+
+	usb_status = 0;
+	usb_selected_buffer_block = 0;
+	usb_read_write_num_blocks = 1;
+	ethernet_send_result = 0;
+
+	// FIXME there should be more state to be reset
 }
 
 uint16_t arm_app_output_event_serial = 0;
@@ -1032,9 +1086,6 @@ int main() {
 	arm_run_env.argc = 0;
 	uint32_t arm_run_address = 0;
 
-	// ethernet state
-	uint16_t ethernet_send_result = 0;
-
 	// zorro state
 	u32 zstate_raw;
 	int interlace_old = 0;
@@ -1068,6 +1119,9 @@ int main() {
 	int backlog_nag_counter = 0;
 	int interrupt_enabled = 0;
 
+	int request_video_align=0;
+	int vblank=0;
+
 	while (1) {
 		u32 zstate = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG3);
 		zstate_raw = zstate;
@@ -1086,7 +1140,9 @@ int main() {
 			u32 ds1 = (zstate_raw & (1 << 27));
 			u32 ds0 = (zstate_raw & (1 << 26));
 
-			//printf("WRTE: %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
+			if (debug_lowlevel) {
+				printf("WRTE: %08lx <- %08lx [%d%d%d%d]\n",zaddr,zdata,!!ds3,!!ds2,!!ds1,!!ds0);
+			}
 
 			if (zaddr > 0x10000000) {
 				printf("ERRW illegal address %08lx\n", zaddr);
@@ -1097,12 +1153,14 @@ int main() {
 					ptr = mem + zaddr - MNT_FB_BASE;
 				} else if (zaddr < MNT_REG_BASE + 0x8000) {
 					// FIXME remove
-					ptr = (u8*) (RX_FRAME_ADDRESS + zaddr
-							- (MNT_REG_BASE + 0x2000));
-					printf("ERXF write: %08lx\n", (u32) ptr);
+					ptr = (u8*) (RX_FRAME_ADDRESS + zaddr - (MNT_REG_BASE + 0x2000));
+					//printf("ERXF write: %08lx\n", (u32) ptr);
+				} else if (zaddr < MNT_REG_BASE + 0xa000) {
+					ptr = (u8*) (TX_FRAME_ADDRESS + zaddr - (MNT_REG_BASE + 0x8000));
 				} else if (zaddr < MNT_REG_BASE + 0x10000) {
-					ptr = (u8*) (TX_FRAME_ADDRESS + zaddr
-							- (MNT_REG_BASE + 0x8000));
+					// 0xa000-0xafff: write to block device (usb storage)
+					// TODO: this should be moved to DMA space?
+					ptr = (u8*) (USB_BLOCK_STORAGE_ADDRESS + zaddr - (MNT_REG_BASE + 0xa000) + usb_selected_buffer_block * 512);
 				}
 
 				// FIXME cache this
@@ -1145,8 +1203,8 @@ int main() {
 					framebuffer_pan_offset |= zdata;
 
 					if (framebuffer_pan_offset != framebuffer_pan_offset_old) {
-						init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
-						video_formatter_valign();
+						// VDMA will be reinitialized on the next vertical blank
+						request_video_align = 1;
 						framebuffer_pan_offset_old = framebuffer_pan_offset;
 					}
 					break;
@@ -1186,23 +1244,49 @@ int main() {
 					// remember selected video mode
 					video_mode = zdata;
 					break;
-				case MNT_BASE_SPRITEX:
-				 	// FIXME the mouse cursor image is offset three pixels to the right when displayed by the FPGA.
-					if (!sprite_enabled)
-						break;
-					sprite_x = zdata + sprite_x_offset + 3;
-					if (sprite_x>32000) sprite_x = 0; // FIXME kludge
-					// horizontally doubled mode
-					if (scalemode&1) sprite_x*=2;
-					video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
+				case MNT_BASE_VCAP_VMODE:
+					printf("videocap default mode select: %lx\n", zdata);
+
+					videocap_video_mode = zdata &0xff;
 					break;
+				case MNT_BASE_SPRITEX:
 				case MNT_BASE_SPRITEY:
 					if (!sprite_enabled)
 						break;
-					sprite_y = zdata + sprite_y_offset;
-					// vertically doubled mode
-					if (scalemode&2) sprite_y*=2;
-					video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
+					if (zaddr == MNT_BASE_SPRITEX) {
+						// The "+#" offset at the end is dependent on implementation timing slack, and needs
+						// to be adjusted based on the sprite X offset produced by the current run.
+						sprite_x = (int16_t)zdata + sprite_x_offset + 3;
+						sprite_x_adj = sprite_x;
+						// horizontally doubled mode
+						if (scalemode&1) sprite_x*=2;
+					}
+					else {
+						sprite_y = (int16_t)zdata + sprite_y_offset;
+						sprite_y_adj = sprite_y;
+						// vertically doubled mode
+						if (scalemode&2) sprite_y*=2;
+
+						if (sprite_x < 0 || sprite_y < 0) {
+							if (sprite_clip_x != sprite_x || sprite_clip_y != sprite_y) {
+								clip_hw_sprite((sprite_x < 0) ? sprite_x : 0, (sprite_y < 0) ? sprite_y : 0);
+							}
+							sprite_clipped = 1;
+							if (sprite_x < 0) {
+								sprite_x_adj = 0;
+								sprite_clip_x = sprite_x;
+							}
+							if (sprite_y < 0) {
+								sprite_y_adj = 0;
+								sprite_clip_y = sprite_y;
+							}
+						}
+						else if (sprite_clipped && sprite_x >= 0 && sprite_y >= 0) {
+							clip_hw_sprite(0, 0);
+							sprite_clipped = 0;
+						}
+						video_formatter_write((sprite_y_adj << 16) | sprite_x_adj, MNTVF_OP_SPRITE_XY);
+					}
 					break;
 				case MNT_BASE_RECTOP + 0x38: { // SPRITE_BITMAP
 					if (zdata == 1) { // Hardware sprite enabled
@@ -1211,14 +1295,13 @@ int main() {
 					}
 					else if (zdata == 2) { // Hardware sprite disabled
 						sprite_hide();
-						video_formatter_write((sprite_y << 16) | sprite_x, MNTVF_OP_SPRITE_XY);
 						break;
 					}
 
 					uint8_t* bmp_data = (uint8_t*) ((u32) framebuffer
 							+ blitter_src_offset);
 
-					clear_hw_sprite(sprite_width, sprite_height);
+					clear_hw_sprite();
 					
 					sprite_x_offset = rect_x1;
 					sprite_y_offset = rect_y1;
@@ -1304,29 +1387,38 @@ int main() {
 								blitter_colormode, mask);
 					break;
 
-				case MNT_BASE_RECTOP + 0x14:
+				case MNT_BASE_RECTOP + 0x14: {
 					// copy rectangle
 					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
 							blitter_dst_pitch);
+					mask = (blitter_colormode >> 8);
 
 					switch (zdata) {
 					case 1: // Regular BlitRect
-						copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
-								rect_y3, blitter_colormode & 0x0F,
-								(uint32_t*) ((u32) framebuffer
-										+ blitter_dst_offset),
-								blitter_dst_pitch);
+						if (mask == 0xFF || (mask != 0xFF && (blitter_colormode & 0x0F)) != MNTVA_COLOR_8BIT)
+							copy_rect_nomask(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+											rect_y3, blitter_colormode & 0x0F,
+											(uint32_t*) ((u32) framebuffer
+													+ blitter_dst_offset),
+											blitter_dst_pitch, MINTERM_SRC);
+						else 
+							copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+									rect_y3, blitter_colormode & 0x0F,
+									(uint32_t*) ((u32) framebuffer
+											+ blitter_dst_offset),
+									blitter_dst_pitch, mask);
 						break;
 					case 2: // BlitRectNoMaskComplete
-						copy_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
-								rect_y3, blitter_colormode & 0x0F,
-								(uint32_t*) ((u32) framebuffer
-										+ blitter_src_offset),
-								blitter_src_pitch);
+						copy_rect_nomask(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+										rect_y3, blitter_colormode & 0x0F,
+										(uint32_t*) ((u32) framebuffer
+												+ blitter_src_offset),
+										blitter_src_pitch, mask); // Mask in this case is minterm/opcode.
 						break;
 					}
-					//Xil_DCacheFlush();
+
 					break;
+				}
 
 				case MNT_BASE_RECTOP + 0x16: {
 					uint8_t draw_mode = blitter_colormode >> 8;
@@ -1339,31 +1431,26 @@ int main() {
 					if (bpp == 0)
 						bpp = 1;
 					uint16_t loop_rows = 0;
+					mask = zdata;
 
 					if (zdata & 0x8000) {
 						// pattern mode
 						// TODO yoffset
 						loop_rows = zdata & 0xff;
+						mask = blitter_user1;
+						blitter_src_pitch = 16;
+						pattern_fill_rect((blitter_colormode & 0x0F), rect_x1,
+								rect_y1, rect_x2, rect_y2, draw_mode, mask,
+								rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data,
+								blitter_src_pitch, loop_rows);
 					}
-
-					if (loop_rows > 0) {
-						/*printf("fill_template:\n====================\n");
-						 printf("bpp: %d\n", bpp);
-						 printf("loop_rows: %d\n", loop_rows);
-						 printf("x:y1 - x:y2 %d:%d - %d:%d\n", rect_x1, rect_y1, rect_x2, rect_y2);
-						 printf("draw_mode: %d\n", draw_mode);
-						 printf("rect_rgb: %lx\n", rect_rgb);
-						 printf("rect_rgb2: %lx\n", rect_rgb2);
-						 printf("rect_x3: %d\n", rect_x3);
-						 printf("rect_y3: %d\n", rect_y3);
-						 printf("tmpl_data: %p\n", tmpl_data);
-						 printf("blitter_src_pitch: %d\n\n", blitter_src_pitch);*/
+					else {
+						template_fill_rect((blitter_colormode & 0x0F), rect_x1,
+								rect_y1, rect_x2, rect_y2, draw_mode, mask,
+								rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data,
+								blitter_src_pitch);
 					}
-
-					pattern_fill_rect((blitter_colormode & 0x0F), rect_x1,
-							rect_y1, rect_x2, rect_y2, draw_mode, 0xff,
-							rect_rgb, rect_rgb2, rect_x3, rect_y3, tmpl_data,
-							blitter_src_pitch, loop_rows);
+					
 					break;
 				}
 
@@ -1380,9 +1467,28 @@ int main() {
 					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
 							blitter_dst_pitch);
 
-					p2c_rect(rect_x1, rect_y1, rect_x2, rect_y2, rect_x3,
+					p2c_rect(rect_x1, 0, rect_x2, rect_y2, rect_x3,
 							rect_y3, num_rows, draw_mode, planes, mask,
 							layer_mask, blitter_src_pitch, bmp_data);
+					break;
+				}
+
+				case MNT_BASE_RECTOP + 0x2c: {
+					// Rect P2D
+					uint8_t draw_mode = blitter_colormode >> 8;
+					uint8_t planes = (zdata & 0xFF00) >> 8;
+					uint8_t mask = (zdata & 0xFF);
+					uint16_t num_rows = blitter_user1;
+					uint8_t layer_mask = blitter_user2;
+					uint8_t* bmp_data = (uint8_t*) ((u32) framebuffer
+							+ blitter_src_offset);
+
+					set_fb((uint32_t*) ((u32) framebuffer + blitter_dst_offset),
+							blitter_dst_pitch);
+
+					p2d_rect(rect_x1, 0, rect_x2, rect_y2, rect_x3,
+							rect_y3, num_rows, draw_mode, planes, mask, layer_mask, rect_rgb,
+							blitter_src_pitch, bmp_data, (blitter_colormode & 0x0F));
 					break;
 				}
 
@@ -1418,7 +1524,6 @@ int main() {
 
 				// Ethernet
 				case MNT_BASE_ETH_TX:
-					Xil_DCacheFlush();
 					ethernet_send_result = ethernet_send_frame(zdata);
 					//printf("SEND frame sz: %ld res: %d\n",zdata,ethernet_send_result);
 					break;
@@ -1443,6 +1548,53 @@ int main() {
 					mac[4] = (zdata & 0xff00) >> 8;
 					mac[5] = (zdata & 0x00ff);
 					ethernet_update_mac_address();
+					break;
+				}
+				case MNT_BASE_USBBLK_TX_HI: {
+					usb_storage_write_block = ((u32) zdata) << 16;
+					break;
+				}
+				case MNT_BASE_USBBLK_TX_LO: {
+					usb_storage_write_block |= zdata;
+					if (usb_storage_available) {
+						usb_status = zz_usb_write_blocks(0, usb_storage_write_block, usb_read_write_num_blocks, (void*)USB_BLOCK_STORAGE_ADDRESS);
+					} else {
+						printf("[USB] TX but no storage available!\n");
+					}
+					break;
+				}
+				case MNT_BASE_USBBLK_RX_HI: {
+					usb_storage_read_block = ((u32) zdata) << 16;
+					break;
+				}
+				case MNT_BASE_USBBLK_RX_LO: {
+					usb_storage_read_block |= zdata;
+					if (usb_storage_available) {
+						usb_status = zz_usb_read_blocks(0, usb_storage_read_block, usb_read_write_num_blocks, (void*)USB_BLOCK_STORAGE_ADDRESS);
+					} else {
+						printf("[USB] RX but no storage available!\n");
+					}
+					break;
+				}
+				case MNT_BASE_USB_STATUS: {
+					//printf("[USB] write to status/blocknum register: %d\n", zdata);
+					if (zdata==0) {
+						// reset USB
+						// FIXME memory leaks?
+						//usb_storage_available = zz_usb_init();
+					} else {
+						// set number of blocks to read/write at once
+						usb_read_write_num_blocks = zdata;
+					}
+					break;
+				}
+				case MNT_BASE_USB_BUFSEL: {
+					//printf("[USB] select buffer: %d\n", zdata);
+					usb_selected_buffer_block = zdata;
+					break;
+				}
+				case MNT_BASE_DEBUG: {
+					debug_lowlevel = zdata;
 					break;
 				}
 
@@ -1537,7 +1689,10 @@ int main() {
 			need_req_ack = 1;
 		} else if (readreq) {
 			uint32_t zaddr = mntzorro_read(MNTZ_BASE_ADDR, MNTZORRO_REG0);
-			//printf("READ: %08lx\n",zaddr);
+
+			if (debug_lowlevel) {
+				printf("READ: %08lx\n",zaddr);
+			}
 			u32 z3 = (zstate_raw & (1 << 25)); // TODO cache
 
 			if (zaddr > 0x10000000) {
@@ -1547,17 +1702,22 @@ int main() {
 				u8* ptr = mem;
 
 				if (zaddr >= MNT_FB_BASE) {
+					// read from framebuffer / generic memory
 					ptr = mem + zaddr - MNT_FB_BASE;
 				} else if (zaddr < MNT_REG_BASE + 0x8000) {
+					// 0x2000-0x7fff: FIXME: waste of address space
+					// read from ethernet RX frame
 					// disable INT6 interrupt
-					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2,
-							(1 << 30) | 0);
-					ptr = (u8*) (ethernet_current_receive_ptr() + zaddr
-							- (MNT_REG_BASE + 0x2000));
+					mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG2, (1 << 30) | 0);
+					ptr = (u8*) (ethernet_current_receive_ptr() + zaddr - (MNT_REG_BASE + 0x2000));
+				} else if (zaddr < MNT_REG_BASE + 0xa000) {
+					// 0x8000-0x9fff: read from TX frame (unusual)
+					ptr = (u8*) (TX_FRAME_ADDRESS + zaddr - (MNT_REG_BASE + 0x8000));
+					//printf("ETXF read: %08lx\n", (u32) ptr);
 				} else if (zaddr < MNT_REG_BASE + 0x10000) {
-					ptr = (u8*) (TX_FRAME_ADDRESS + zaddr
-							- (MNT_REG_BASE + 0x8000));
-					printf("ETXF read: %08lx\n", (u32) ptr);
+					// 0xa000-0xafff: read from block device (usb storage)
+					// TODO: this should be moved to DMA space?
+					ptr = (u8*) (USB_BLOCK_STORAGE_ADDRESS + zaddr - (MNT_REG_BASE + 0xa000) + usb_selected_buffer_block * 512);
 				}
 
 				if (z3) {
@@ -1589,10 +1749,21 @@ int main() {
 					uint8_t* mac = ethernet_get_mac_address_ptr();
 					data = mac[4] << 24 | mac[5] << 16;
 				} else if (zaddr32 == MNT_BASE_ETH_TX) {
+					// FIXME this is probably wrong (doesn't need swapping?)
 					data = (ethernet_send_result & 0xff) << 24
 							| (ethernet_send_result & 0xff00) << 16;
 				} else if (zaddr32 == MNT_BASE_FW_VERSION) {
 					data = (REVISION_MAJOR << 24 | REVISION_MINOR << 16);
+				} else if (zaddr32 == MNT_BASE_USB_STATUS) {
+					data = usb_status << 16;
+				} else if (zaddr32 == MNT_BASE_USB_CAPACITY) {
+					if (usb_storage_available) {
+						printf("[USB] query capacity: %lx\n",zz_usb_storage_capacity(0));
+						data = zz_usb_storage_capacity(0);
+					} else {
+						printf("[USB] query capacity: no device.\n");
+						data = 0;
+					}
 				}
 
 				if (z3) {
@@ -1603,8 +1774,7 @@ int main() {
 						mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, data);
 					} else {
 						// upper 16 bit
-						mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1,
-								data >> 16);
+						mntzorro_write(MNTZ_BASE_ADDR, MNTZORRO_REG1, data >> 16);
 					}
 				}
 			}
@@ -1628,14 +1798,12 @@ int main() {
 
 			// FIXME magic constant
 			if (videocap_enabled && framebuffer_pan_offset >= 0xe00000) {
+				if (sprite_enabled) {
+					sprite_hide();
+				}
+
 				if (!videocap_enabled_old) {
 					videocap_area_clear();
-
-					if (!videocap_ntsc) {
-						// remember current video mode as desired video capture video mode for PAL
-						videocap_video_mode = video_mode & 0xff;
-					}
-
 					videocap_ntsc_old = 0;
 				}
 
@@ -1648,12 +1816,7 @@ int main() {
 						video_mode_init(ZZVMODE_720x480, 2, MNTVA_COLOR_32BIT);
 					} else {
 						// PAL
-						// FIXME duplication
-						if (videocap_video_mode == ZZVMODE_800x600) {
-							default_pan_offset = 0x00e00bd0;
-						} else {
-							default_pan_offset = 0x00e00000;
-						}
+						reset_default_videocap_pan();
 						framebuffer_pan_offset = default_pan_offset;
 						video_mode_init(videocap_video_mode, 2, MNTVA_COLOR_32BIT);
 					}
@@ -1663,16 +1826,23 @@ int main() {
 				int interlace = !!(zstate_raw & (1 << 24));
 				if (interlace != interlace_old) {
 					// interlace has changed, we need to reconfigure vdma for the new screen height
-					int vdiv = 2;
+					vmode_vdiv = 2;
 					if (interlace) {
-						vdiv = 1;
+						vmode_vdiv = 1;
 					}
 					videocap_area_clear();
-					init_vdma(vmode_hsize, vmode_vsize, 1, vdiv);
+					init_vdma(vmode_hsize, vmode_vsize, 1, vmode_vdiv);
 					video_formatter_valign();
-					printf("videocap interlace mode changed.\n");
+					printf("videocap interlace mode changed to %d.\n", interlace);
+
+					// avoid multiple video re-alignments in the same cycle
+					request_video_align = 0;
 				}
 				interlace_old = interlace;
+			}
+			else {
+				if(!sprite_enabled)
+					sprite_enabled = 1;
 			}
 
 			if (videocap_enabled_old != videocap_enabled) {
@@ -1685,6 +1855,15 @@ int main() {
 			if (zstate == 0) {
 				// RESET
 				handle_amiga_reset();
+			}
+		}
+
+		// re-init VDMA if requested
+		if (request_video_align) {
+			vblank = (zstate_raw & (1<<21));
+			if (vblank) {
+				request_video_align = 0;
+				init_vdma(vmode_hsize, vmode_vsize, vmode_hdiv, vmode_vdiv);
 			}
 		}
 

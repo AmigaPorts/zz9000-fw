@@ -34,7 +34,8 @@ module video_formatter(
   // control inputs for setting palette, width/height, scaling
   input [31:0] control_data,
   input [7:0] control_op,
-  input control_interlace
+  input control_interlace,
+  output reg control_vblank
 );
 
 localparam OP_COLORMODE=1;
@@ -238,7 +239,7 @@ begin
         sync_polarity <= control_data_in[0];
       end
     OP_RESET: begin
-        sync_polarity <= 1;
+        /*sync_polarity <= 1;
         screen_h_max <= 864;
         screen_v_max <= 625;
         screen_h_sync_start <= 732;
@@ -249,7 +250,7 @@ begin
         scale_y <= 1;
         screen_width <= 720;
         screen_height <= 576;
-        colormode <= CMODE_32BIT;
+        colormode <= CMODE_32BIT;*/
       end
     OP_SPRITEXY: begin
         sprite_y <= control_data_in[31:16];
@@ -437,11 +438,14 @@ always @(posedge dvi_clk) begin
   else
     dvi_hsync <= 0^vga_sync_polarity;
     
-  if (counter_y>=vga_v_sync_start && counter_y<vga_v_sync_end)
+  if (counter_y>=vga_v_sync_start && counter_y<vga_v_sync_end) begin
     dvi_vsync <= 1^vga_sync_polarity;
-  else
+    control_vblank <= 1;
+  end
+  else begin
     dvi_vsync <= 0^vga_sync_polarity;
-  
+    control_vblank <= 0;
+  end
   // 4 clocks pipeline delay
   vga_h_rez_shifted <= vga_h_rez+4;
   

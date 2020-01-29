@@ -29,48 +29,78 @@ void set_fb(uint32_t* fb_, uint32_t pitch) {
 	fb_pitch=pitch;
 }
 
+extern uint32_t* sprite_buf;
 void video_formatter_write(uint32_t data, uint16_t op);
 
 void update_hw_sprite(uint8_t *data, uint32_t *colors, uint16_t w, uint16_t h)
 {
 	uint8_t cur_bit = 0x80;
-	uint8_t cur_byte = 0, out_pos = 0;
+	uint8_t cur_color = 0, out_pos = 0, iter_offset = 0;
 	uint8_t line_pitch = (w / 8) * 2;
+	uint8_t cur_bytes[8];
 
 	for (uint8_t y_line = 0; y_line < h; y_line++) {
+		if (w <= 16) {
+			cur_bytes[0] = data[y_line * line_pitch];
+			cur_bytes[1] = data[(y_line * line_pitch) + 2];
+			cur_bytes[2] = data[(y_line * line_pitch) + 1];
+			cur_bytes[3] = data[(y_line * line_pitch) + 3];
+		}
+		else {
+			cur_bytes[0] = data[y_line * line_pitch];
+			cur_bytes[1] = data[(y_line * line_pitch) + 4];
+			cur_bytes[2] = data[(y_line * line_pitch) + 1];
+			cur_bytes[3] = data[(y_line * line_pitch) + 5];
+			cur_bytes[4] = data[(y_line * line_pitch) + 2];
+			cur_bytes[5] = data[(y_line * line_pitch) + 6];
+			cur_bytes[6] = data[(y_line * line_pitch) + 3];
+			cur_bytes[7] = data[(y_line * line_pitch) + 7];
+		}
+
 		while(out_pos < 8) {
-			cur_byte = (data[y_line * line_pitch] & cur_bit) ? 1: 0;
-			if (data[(y_line * line_pitch) + 2] & cur_bit) cur_byte += 2;
+			for (uint8_t i = 0; i < line_pitch; i += 2) {
+				cur_color = (cur_bytes[i] & cur_bit) ? 1 : 0;
+				if (cur_bytes[i + 1] & cur_bit) cur_color += 2;
 
-			video_formatter_write(((y_line * 32) + out_pos), 14);
-			video_formatter_write(colors[cur_byte] & 0x00ffffff, 15);
+				sprite_buf[(y_line * 32) + out_pos + iter_offset] = colors[cur_color] & 0x00ffffff;
 
-			cur_byte = (data[(y_line * line_pitch) + 1] & cur_bit) ? 1 : 0;
-			if (data[(y_line * line_pitch) + 3] & cur_bit) cur_byte += 2;
-
-			video_formatter_write(((y_line * 32) + out_pos + 8), 14);
-			video_formatter_write(colors[cur_byte] & 0x00ffffff, 15);
-
-			// FIXME
-			if (w > 16) {
-				//cur_byte = (data[(y_line * line_pitch) + 4] & cur_bit) ? 1 : 0;
-				//if (data[(y_line * line_pitch) + 5] & cur_bit) cur_byte += 2;
-
-				//video_formatter_write(((y_line * w) + out_pos + 16) << 24 | (colors[cur_byte] & 0x00ffffff), 15);
+				video_formatter_write(((y_line * 32) + out_pos + iter_offset), 14);
+				video_formatter_write(colors[cur_color] & 0x00ffffff, 15);
+				iter_offset += 8;
 			}
 
 			out_pos++;
 			cur_bit >>= 1;
+			iter_offset = 0;
 		}
 		cur_bit = 0x80;
 		out_pos = 0;
 	}
 }
 
-void clear_hw_sprite(uint8_t w, uint8_t h)
+void clip_hw_sprite(int16_t offset_x, int16_t offset_y)
 {
-	//for (uint16_t i = 0; i < w * h; i++)
+	uint16_t xo = 0, yo = 0;
+	if (offset_x < 0)
+		xo = -offset_x;
+	if (offset_y < 0)
+		yo = -offset_y;
+
+	for (int y = 0; y < 48; y++) {
+		for (int x = 0; x < 32; x++) {
+			video_formatter_write((y * 32) + x, 14);
+			if (x < 32 - xo && y < 48 - yo)
+				video_formatter_write(sprite_buf[((y + yo) * 32) + (x + xo)] & 0x00ffffff, 15);
+			else
+				video_formatter_write(0x00ff00ff, 15);
+		}
+	}
+}
+
+void clear_hw_sprite()
+{
 	for (uint16_t i = 0; i < 32 * 48; i++) {
+		sprite_buf[i] = 0x00ff00ff;
 		video_formatter_write(i, 14);
 		video_formatter_write(0xff00ff, 15);
 	}
@@ -99,7 +129,7 @@ void fill_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint3
 		switch(color_format) {
 			case MNTVA_COLOR_8BIT:
 				while(x < rect_x2) {
-					SET_FG_PIXEL8_MASK;
+					SET_FG_PIXEL8_MASK(0);
 					x++;
 				}
 				break;
@@ -197,11 +227,100 @@ void fill_rect16(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t 
 	}
 }
 
-void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch)
+void copy_rect_nomask(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch, uint8_t draw_mode)
 {
 	uint32_t* dp = fb + (rect_y1 * fb_pitch);
 	uint32_t* sp = sp_src + (rect_sy * src_pitch);
 	uint16_t rect_y2 = rect_y1 + h - 1;
+	uint8_t mask = 0xFF; // Perform mask handling, just in case we get a FillRectComplete at some point.
+	uint32_t color_mask = 0x00FFFFFF;
+
+	uint8_t u8_fg = 0;
+	uint32_t fg_color = 0;
+
+	int32_t line_step_d = fb_pitch, line_step_s = src_pitch;
+	int8_t x_reverse = 0;
+
+	if (rect_sy < rect_y1) {
+		line_step_d = -fb_pitch;
+		dp = fb + (rect_y2 * fb_pitch);
+		line_step_s = -src_pitch;
+		sp = sp_src + ((rect_sy + h - 1) * src_pitch);
+	}
+
+	if (rect_sx < rect_x1) {
+		x_reverse = 1;
+	}
+
+	if (draw_mode == MINTERM_SRC) {
+		for (uint16_t y_line = 0; y_line < h; y_line++) {
+			switch(color_format) {
+				case MNTVA_COLOR_8BIT:
+					if (!x_reverse)
+						memcpy((uint8_t *)dp + rect_x1, (uint8_t *)sp + rect_sx, w);
+					else
+						memmove((uint8_t *)dp + rect_x1, (uint8_t *)sp + rect_sx, w);
+					break;
+				case MNTVA_COLOR_16BIT565:
+					if (!x_reverse)
+						memcpy((uint16_t *)dp + rect_x1, (uint16_t *)sp + rect_sx, w * 2);
+					else
+						memmove((uint16_t *)dp + rect_x1, (uint16_t *)sp + rect_sx, w * 2);
+					break;
+				case MNTVA_COLOR_32BIT:
+					if (!x_reverse)
+						memcpy(dp + rect_x1, sp + rect_sx, w * 4);
+					else
+						memmove(dp + rect_x1, sp + rect_sx, w * 4);
+					break;
+			}
+			dp += line_step_d;
+			sp += line_step_s;
+		}
+	}
+	else {
+		for (uint16_t y_line = 0; y_line < h; y_line++) {
+			if (x_reverse) {
+				for (int16_t x = w; x >= 0; x--) {
+					if (color_format == MNTVA_COLOR_8BIT) {
+						u8_fg = ((uint8_t *)sp)[rect_sx + x];
+						HANDLE_MINTERM_PIXEL_8(u8_fg, ((uint8_t *)dp)[rect_x1 + x]);
+					}
+					else {
+						if (color_format == MNTVA_COLOR_16BIT565)
+							fg_color = ((uint16_t *)sp)[rect_sx + x];
+						else
+							fg_color = sp[rect_sx + x];
+						HANDLE_MINTERM_PIXEL_16_32(fg_color, dp);
+					}
+				}
+			}
+			else {
+				for (int16_t x = 0; x < w; x++) {
+					if (color_format == MNTVA_COLOR_8BIT) {
+						u8_fg = ((uint8_t *)sp)[rect_sx + x];
+						HANDLE_MINTERM_PIXEL_8(u8_fg, ((uint8_t *)dp)[rect_x1 + x]);
+					}
+					else {
+						if (color_format == MNTVA_COLOR_16BIT565)
+							fg_color = ((uint16_t *)sp)[rect_sx + x];
+						else
+							fg_color = sp[rect_sx + x];
+						HANDLE_MINTERM_PIXEL_16_32(fg_color, dp);
+					}
+				}
+			}
+			dp += line_step_d;
+			sp += line_step_s;
+		}
+	}
+}
+
+void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint16_t rect_sx, uint16_t rect_sy, uint32_t color_format, uint32_t* sp_src, uint32_t src_pitch, uint8_t mask)
+{
+	uint32_t* dp = fb + (rect_y1 * fb_pitch);
+	uint32_t* sp = sp_src + (rect_sy * src_pitch);
+	uint16_t rect_y2 = rect_y1 + h - 1;//, rect_x2 = rect_x1 + h - 1;
 
 	int32_t line_step_d = fb_pitch, line_step_s = src_pitch;
 	int8_t x_reverse = 0;
@@ -218,25 +337,15 @@ void copy_rect(uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h, uint1
 	}
 
 	for (uint16_t y_line = 0; y_line < h; y_line++) {
-		switch(color_format) {
-			case MNTVA_COLOR_8BIT:
-				if (!x_reverse)
-					memcpy((uint8_t *)dp + rect_x1, (uint8_t *)sp + rect_sx, w);
-				else
-					memmove((uint8_t *)dp + rect_x1, (uint8_t *)sp + rect_sx, w);
-				break;
-			case MNTVA_COLOR_16BIT565:
-				if (!x_reverse)
-					memcpy((uint16_t *)dp + rect_x1, (uint16_t *)sp + rect_sx, w * 2);
-				else
-					memmove((uint16_t *)dp + rect_x1, (uint16_t *)sp + rect_sx, w * 2);
-				break;
-			case MNTVA_COLOR_32BIT:
-				if (!x_reverse)
-					memcpy(dp + rect_x1, sp + rect_sx, w * 4);
-				else
-					memmove(dp + rect_x1, sp + rect_sx, w * 4);
-				break;
+		if (x_reverse) {
+			for (int16_t x = w; x >= 0; x--) {
+				((uint8_t *)dp)[rect_x1 + x] = (((uint8_t *)dp)[rect_x1 + x] & (mask ^ 0xFF)) | (((uint8_t *)sp)[rect_sx + x] & mask);
+			}
+		}
+		else {
+			for (int16_t x = 0; x < w; x++) {
+				((uint8_t *)dp)[rect_x1 + x] = (((uint8_t *)dp)[rect_x1 + x] & (mask ^ 0xFF)) | (((uint8_t *)sp)[rect_sx + x] & mask);
+			}
 		}
 		dp += line_step_d;
 		sp += line_step_s;
@@ -326,7 +435,7 @@ void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t r
 		if(pattern & cur_bit) { \
 			if (!inversion) { \
 				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_FG_PIXEL; } \
-				else { SET_FG_PIXEL8_MASK } \
+				else { SET_FG_PIXEL8_MASK(0) } \
 			} \
 			else { INVERT_PIXEL; } \
 		} \
@@ -335,14 +444,14 @@ void copy_rect8(uint16_t rect_x1, uint16_t rect_y1, uint16_t rect_x2, uint16_t r
 		if(pattern & cur_bit) { \
 			if (!inversion) { \
 				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_FG_PIXEL; } \
-				else { SET_FG_PIXEL8_MASK; } \
+				else { SET_FG_PIXEL8_MASK(0); } \
 			} \
 			else { INVERT_PIXEL; } /* JAM2 and complement is kind of useless, as it ends up being the same visual result as JAM1 and a pattern of 0xFFFF */ \
 		} \
 		else { \
 			if (!inversion) { \
 				if (mask == 0xFF || color_format == MNTVA_COLOR_16BIT565 || color_format == MNTVA_COLOR_32BIT) { SET_BG_PIXEL; } \
-				else { SET_BG_PIXEL8_MASK; } \
+				else { SET_BG_PIXEL8_MASK(0); } \
 			} \
 			else { INVERT_PIXEL; } \
 		} \
@@ -490,82 +599,61 @@ void draw_line_solid(int16_t rect_x1, int16_t rect_y1, int16_t rect_x2, int16_t 
 	}
 }
 
+#define DECODE_PLANAR_PIXEL(a) \
+	switch (planes) { \
+		case 8: if (layer_mask & 0x80 && bmp_data[(plane_size * 7) + cur_byte] & cur_bit) a |= 0x80; \
+		case 7: if (layer_mask & 0x40 && bmp_data[(plane_size * 6) + cur_byte] & cur_bit) a |= 0x40; \
+		case 6: if (layer_mask & 0x20 && bmp_data[(plane_size * 5) + cur_byte] & cur_bit) a |= 0x20; \
+		case 5: if (layer_mask & 0x10 && bmp_data[(plane_size * 4) + cur_byte] & cur_bit) a |= 0x10; \
+		case 4: if (layer_mask & 0x08 && bmp_data[(plane_size * 3) + cur_byte] & cur_bit) a |= 0x08; \
+		case 3: if (layer_mask & 0x04 && bmp_data[(plane_size * 2) + cur_byte] & cur_bit) a |= 0x04; \
+		case 2: if (layer_mask & 0x02 && bmp_data[plane_size + cur_byte] & cur_bit) a |= 0x02; \
+		case 1: if (layer_mask & 0x01 && bmp_data[cur_byte] & cur_bit) a |= 0x01; \
+			break; \
+	}
+
+#define DECODE_INVERTED_PLANAR_PIXEL(a) \
+	switch (planes) { \
+		case 8: if (layer_mask & 0x80 && (bmp_data[(plane_size * 7) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x80; \
+		case 7: if (layer_mask & 0x40 && (bmp_data[(plane_size * 6) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x40; \
+		case 6: if (layer_mask & 0x20 && (bmp_data[(plane_size * 5) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x20; \
+		case 5: if (layer_mask & 0x10 && (bmp_data[(plane_size * 4) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x10; \
+		case 4: if (layer_mask & 0x08 && (bmp_data[(plane_size * 3) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x08; \
+		case 3: if (layer_mask & 0x04 && (bmp_data[(plane_size * 2) + cur_byte] ^ 0xFF) & cur_bit) a |= 0x04; \
+		case 2: if (layer_mask & 0x02 && (bmp_data[plane_size + cur_byte] ^ 0xFF) & cur_bit) a |= 0x02; \
+		case 1: if (layer_mask & 0x01 && (bmp_data[cur_byte] ^ 0xFF) & cur_bit) a |= 0x01; \
+			break; \
+	}
+
 void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t h, uint16_t sh, uint8_t draw_mode, uint8_t planes, uint8_t mask, uint8_t layer_mask, uint16_t src_line_pitch, uint8_t *bmp_data_src)
 {
 	uint32_t *dp = fb + (dy * fb_pitch);
 
 	uint8_t cur_bit, base_bit, base_byte;
-	uint16_t cur_byte = 0, error_printed = 0;
+	uint16_t cur_byte = 0, u8_fg = 0;
 
-	uint16_t plane_size = src_line_pitch * sh;
-	uint8_t *bmp_data = bmp_data_src + ((sy % sh) * src_line_pitch);
+	uint32_t plane_size = src_line_pitch * h;
+	uint8_t *bmp_data = bmp_data_src;
 
 	cur_bit = base_bit = (0x80 >> (sx % 8));
 	cur_byte = base_byte = ((sx / 8) % src_line_pitch);
 
 	for (int16_t line_y = 0; line_y < h; line_y++) {
 		for (int16_t x = dx; x < dx + w; x++) {
-			switch (draw_mode) {
-				case 0x05: // Invert destination
-					((uint8_t *)dp)[x] ^= 0xFF;
-					break;
-				case 0x0C: // Replace destination with source
-					((uint8_t *)dp)[x] = 0x00;
-					switch (planes) {
-						case 8:
-							if (layer_mask & 0x80 && bmp_data[(plane_size * 7) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x80;
-						case 7:
-							if (layer_mask & 0x40 && bmp_data[(plane_size * 6) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x40;
-						case 6:
-							if (layer_mask & 0x20 && bmp_data[(plane_size * 5) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x20;
-						case 5:
-							if (layer_mask & 0x10 && bmp_data[(plane_size * 4) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x10;
-						case 4:
-							if (layer_mask & 0x08 && bmp_data[(plane_size * 3) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x08;
-						case 3:
-							if (layer_mask & 0x04 && bmp_data[(plane_size * 2) + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x04;
-						case 2:
-							if (layer_mask & 0x02 && bmp_data[plane_size + cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x02;
-						case 1:
-							if (layer_mask & 0x01 && bmp_data[cur_byte] & cur_bit) ((uint8_t *)dp)[x] |= 0x01;
-							break;
-					}
-					break;
-				case 0x03: // Replace destination with inverted source
-					((uint8_t *)dp)[x] = 0x00;
-					switch (planes) {
-						case 8:
-							if (layer_mask & 0x80 && (bmp_data[(plane_size * 7) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x80;
-						case 7:
-							if (layer_mask & 0x40 && (bmp_data[(plane_size * 6) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x40;
-						case 6:
-							if (layer_mask & 0x20 && (bmp_data[(plane_size * 5) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x20;
-						case 5:
-							if (layer_mask & 0x10 && (bmp_data[(plane_size * 4) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x10;
-						case 4:
-							if (layer_mask & 0x08 && (bmp_data[(plane_size * 3) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x08;
-						case 3:
-							if (layer_mask & 0x04 && (bmp_data[(plane_size * 2) + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x04;
-						case 2:
-							if (layer_mask & 0x02 && (bmp_data[plane_size + cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x02;
-						case 1:
-							if (layer_mask & 0x01 && (bmp_data[cur_byte] ^ 0xFF) & cur_bit) ((uint8_t *)dp)[x] |= 0x01;
-							break;
-					}
-					break;
-				default:
-					// TODO: Not all minterm modes are handled yet.
-					// Unhandled minterm draw mode. Pixels will be filled with a horribly ugly
-					// brown color to indicate that there's an issue. Also print an error over
-					// UART for easier debugging.
-					((uint8_t *)dp)[x] = draw_mode << 8;
-					if (!error_printed) {
-						printf ("p2c_rect: Unhandled draw mode %.2X.\n", draw_mode);
-						error_printed = 1;
-					}
-					break;
+			u8_fg = 0;
+			if (draw_mode & 0x01) // If bit 1 is set, the inverted planar data is always used.
+				DECODE_INVERTED_PLANAR_PIXEL(u8_fg)
+			else
+				DECODE_PLANAR_PIXEL(u8_fg)
+			
+			if (mask == 0xFF && (draw_mode == MINTERM_SRC || draw_mode == MINTERM_NOTSRC)) {
+				((uint8_t *)dp)[x] = u8_fg;
+				goto skip;
 			}
 
+			HANDLE_MINTERM_PIXEL_8(u8_fg, ((uint8_t *)dp)[x]);
+
+			skip:;
 			if ((cur_bit >>= 1) == 0) {
 				cur_bit = 0x80;
 				cur_byte++;
@@ -574,7 +662,7 @@ void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 
 		}
 		dp += fb_pitch;
-		if ((line_y + sy + 1) % sh)
+		if ((line_y + sy + 1) % h)
 			bmp_data += src_line_pitch;
 		else
 			bmp_data = bmp_data_src;
@@ -583,17 +671,69 @@ void p2c_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t
 	}
 }
 
-// inspired by UAE code. needs cleanup / optimization
+void p2d_rect(int16_t sx, int16_t sy, int16_t dx, int16_t dy, int16_t w, int16_t h, uint16_t sh, uint8_t draw_mode, uint8_t planes, uint8_t mask, uint8_t layer_mask, uint32_t color_mask, uint16_t src_line_pitch, uint8_t *bmp_data_src, uint32_t color_format)
+{
+	uint32_t *dp = fb + (dy * fb_pitch);
+
+	uint8_t cur_bit, base_bit, base_byte;
+	uint16_t cur_byte = 0, cur_pixel = 0;
+	uint32_t fg_color = 0;
+
+	uint32_t plane_size = src_line_pitch * h;
+	uint32_t *bmp_pal = (uint32_t *)bmp_data_src;
+	uint8_t *bmp_data = bmp_data_src + (256 * 4);
+
+	cur_bit = base_bit = (0x80 >> (sx % 8));
+	cur_byte = base_byte = ((sx / 8) % src_line_pitch);
+
+	for (int16_t line_y = 0; line_y < h; line_y++) {
+		for (int16_t x = dx; x < dx + w; x++) {
+			cur_pixel = 0;
+			if (draw_mode & 0x01)
+				DECODE_INVERTED_PLANAR_PIXEL(cur_pixel)
+			else
+				DECODE_PLANAR_PIXEL(cur_pixel)
+			fg_color = bmp_pal[cur_pixel];
+
+			if (mask == 0xFF && (draw_mode == 0x0C || draw_mode == 0x03)) {
+				switch (color_format) {
+					case MNTVA_COLOR_16BIT565:
+						((uint16_t *)dp)[x] = fg_color;
+						break;
+					case MNTVA_COLOR_32BIT:
+						dp[x] = fg_color;
+						break;
+				}
+				goto skip;
+			}
+
+			HANDLE_MINTERM_PIXEL_16_32(fg_color, dp);
+
+			skip:;
+			if ((cur_bit >>= 1) == 0) {
+				cur_bit = 0x80;
+				cur_byte++;
+				cur_byte %= src_line_pitch;
+			}
+
+		}
+		dp += fb_pitch;
+		if ((line_y + sy + 1) % h)
+			bmp_data += src_line_pitch;
+		else
+			bmp_data = bmp_data_src;
+		cur_bit = base_bit;
+		cur_byte = base_byte;
+	}
+}
 
 #define PATTERN_FILLRECT_LOOPX \
-	tmpl_x++; \
-	if (loop_rows) \
-		tmpl_x = tmpl_x % 2; \
+	tmpl_x ^= 0x01; \
 	cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
 
 #define PATTERN_FILLRECT_LOOPY \
-	tmpl_data += (loop_rows > 0) ? 2 : tmpl_pitch; \
-	if (loop_rows && (y_line + y_offset + 1) % loop_rows == 0) \
+	tmpl_data += 2 ; \
+	if ((y_line + y_offset + 1) % loop_rows == 0) \
 		tmpl_data = tmpl_base; \
 	tmpl_x = tmpl_x_base; \
 	cur_bit = base_bit; \
@@ -615,11 +755,8 @@ void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1
 	uint8_t u8_bg = bg_color >> 24;
 	uint8_t cur_byte = 0;
 
-	tmpl_x = x_offset / 8;
-	if (loop_rows) {
-		tmpl_x %= 2;
-		tmpl_data += (y_offset % loop_rows) * 2;
-	}
+	tmpl_x = (x_offset / 8) % 2;
+	tmpl_data += (y_offset % loop_rows) * 2;
 	tmpl_x_base = tmpl_x;
 
 	cur_bit = base_bit = (0x80 >> (x_offset % 8));
@@ -635,13 +772,18 @@ void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1
 
 			while (x < rect_x2) {
 				if (cur_bit == 0x80 && x < rect_x2 - 8) {
-					SET_FG_PIXELS;
+					if (mask == 0xFF) {
+						SET_FG_PIXELS;
+					}
+					else {
+						SET_FG_PIXELS_MASK;
+					}
 					x += 8;
 				}
 				else {
 					while (cur_bit > 0 && x < rect_x2) {
 						if (cur_byte & cur_bit) {
-							SET_FG_PIXEL;
+							SET_FG_PIXEL_MASK;
 						}
 						x++;
 						cur_bit >>= 1;
@@ -663,16 +805,21 @@ void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1
 
 			while (x < rect_x2) {
 				if (cur_bit == 0x80 && x < rect_x2 - 8) {
-					SET_FG_OR_BG_PIXELS;
+					if (mask == 0xFF) {
+						SET_FG_OR_BG_PIXELS;
+					}
+					else {
+						SET_FG_OR_BG_PIXELS_MASK;
+					}
 					x += 8;
 				}
 				else {
 					while (cur_bit > 0 && x < rect_x2) {
 						if (cur_byte & cur_bit) {
-							SET_FG_PIXEL;
+							SET_FG_PIXEL_MASK;
 						}
 						else {
-							SET_BG_PIXEL;
+							SET_BG_PIXEL_MASK;
 						}
 						x++;
 						cur_bit >>= 1;
@@ -710,6 +857,136 @@ void pattern_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1
 				PATTERN_FILLRECT_LOOPX;
 			}
 			PATTERN_FILLRECT_LOOPY;	
+		}
+	}
+}
+
+#define TEMPLATE_FILLRECT_LOOPX \
+	tmpl_x++; \
+	cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+#define TEMPLATE_FILLRECT_LOOPY \
+	tmpl_data += tmpl_pitch; \
+	tmpl_x = tmpl_x_base; \
+	cur_bit = base_bit; \
+	dp += fb_pitch / 4;
+
+void template_fill_rect(uint32_t color_format, uint16_t rect_x1, uint16_t rect_y1, uint16_t w, uint16_t h,
+	uint8_t draw_mode, uint8_t mask, uint32_t fg_color, uint32_t bg_color,
+	uint16_t x_offset, uint16_t y_offset,
+	uint8_t *tmpl_data, uint16_t tmpl_pitch)
+{
+	uint32_t rect_x2 = rect_x1 + w;
+	uint32_t *dp = fb + (rect_y1 * (fb_pitch / 4));
+
+	uint16_t tmpl_x, tmpl_x_base;
+
+	uint8_t cur_bit, base_bit, inversion = 0;
+	uint8_t u8_fg = fg_color >> 24;
+	uint8_t u8_bg = bg_color >> 24;
+	uint8_t cur_byte = 0;
+
+	tmpl_x = x_offset / 8;
+	tmpl_x_base = tmpl_x;
+
+	cur_bit = base_bit = (0x80 >> (x_offset % 8));
+
+	if (draw_mode & INVERSVID) inversion = 1;
+	draw_mode &= 0x03;
+
+	if (draw_mode == JAM1) {
+		for (uint16_t y_line = 0; y_line < h; y_line++) {
+			uint16_t x = rect_x1;
+
+			cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+			while (x < rect_x2) {
+				if (cur_bit == 0x80 && x < rect_x2 - 8) {
+					if (mask == 0xFF) {
+						SET_FG_PIXELS;
+					}
+					else {
+						SET_FG_PIXELS_MASK;
+					}
+					x += 8;
+				}
+				else {
+					while (cur_bit > 0 && x < rect_x2) {
+						if (cur_byte & cur_bit) {
+							SET_FG_PIXEL_MASK;
+						}
+						x++;
+						cur_bit >>= 1;
+					}
+					cur_bit = 0x80;
+				}
+				TEMPLATE_FILLRECT_LOOPX;
+			}
+			TEMPLATE_FILLRECT_LOOPY;
+		}
+
+		return;
+	}
+	else if (draw_mode == JAM2) {
+		for (uint16_t y_line = 0; y_line < h; y_line++) {
+			uint16_t x = rect_x1;
+
+			cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+			while (x < rect_x2) {
+				if (cur_bit == 0x80 && x < rect_x2 - 8) {
+					if (mask == 0xFF) {
+						SET_FG_OR_BG_PIXELS;
+					}
+					else {
+						SET_FG_OR_BG_PIXELS_MASK;
+					}
+					x += 8;
+				}
+				else {
+					while (cur_bit > 0 && x < rect_x2) {
+						if (cur_byte & cur_bit) {
+							SET_FG_PIXEL_MASK;
+						}
+						else {
+							SET_BG_PIXEL_MASK;
+						}
+						x++;
+						cur_bit >>= 1;
+					}
+					cur_bit = 0x80;
+				}
+				TEMPLATE_FILLRECT_LOOPX;
+			}
+			TEMPLATE_FILLRECT_LOOPY;
+		}
+
+		return;
+	}
+	else { // COMPLEMENT
+		for (uint16_t y_line = 0; y_line < h; y_line++) {
+			uint16_t x = rect_x1;
+
+			cur_byte = (inversion) ? tmpl_data[tmpl_x] ^ 0xFF : tmpl_data[tmpl_x];
+
+			while (x < rect_x2) {
+				if (cur_bit == 0x80 && x < rect_x2 - 8) {
+					INVERT_PIXELS;
+					x += 8;
+				}
+				else {
+					while (cur_bit > 0 && x < rect_x2) {
+						if (cur_byte & cur_bit) {
+							INVERT_PIXEL;
+						}
+						x++;
+						cur_bit >>= 1;
+					}
+					cur_bit = 0x80;
+				}
+				TEMPLATE_FILLRECT_LOOPX;
+			}
+			TEMPLATE_FILLRECT_LOOPY;	
 		}
 	}
 }

@@ -57,8 +57,6 @@ static volatile u32 frames_received = 0;
 static volatile u16 frames_backlog = 0;
 int frames_received_from_backlog = 0;
 
-#define FRAME_SIZE 2048
-
 typedef char EthernetFrame[XEMACPS_MAX_VLAN_FRAME_SIZE_JUMBO] __attribute__ ((aligned(64)));
 
 volatile char* TxFrame = (char*)TX_FRAME_ADDRESS;		/* Transmit buffer */
@@ -209,7 +207,6 @@ int ethernet_init() {
 	FramesRx = 0;
 	frame_serial = 0;
 	frames_received = 0;
-	frames_backlog = 0;
 
 	Config = XEmacPs_LookupConfig(XPAR_XEMACPS_0_DEVICE_ID);
 	Status = XEmacPs_CfgInitialize(EmacPsInstancePtr, Config, Config->BaseAddress);
@@ -252,7 +249,7 @@ int ethernet_init() {
 	 * The BDs need to be allocated in uncached memory. Hence the 1 MB
 	 * address range that starts at address 0x0FF00000 is made uncached.
 	 */
-	Xil_SetTlbAttributes(RX_BD_LIST_START_ADDRESS, 0xc02);
+	Xil_SetTlbAttributes(RX_BD_LIST_START_ADDRESS, STRONG_ORDERED);
 	//Xil_SetTlbAttributes(RX_FRAME_ADDRESS, 0xc02);
 	//Xil_SetTlbAttributes(TX_FRAME_ADDRESS, 0xc02);
 
@@ -261,15 +258,15 @@ int ethernet_init() {
 
 	setup_phy(EmacPsInstancePtr);
 
+	// FIXME
 	EmacPsSetupIntrSystem(IntcInstancePtr, EmacPsInstancePtr, EMACPS_IRPT_INTR);
 
+	// init_ethernet_buffers() also starts EmacPS
 	Status = init_ethernet_buffers();
 	if (Status != XST_SUCCESS) {
 		printf("EMAC: init_ethernet_buffers() error\n");
 		return XST_FAILURE;
 	}
-
-	//XEmacPs_Start(EmacPsInstancePtr);
 
 	return XST_SUCCESS;
 }
@@ -336,10 +333,6 @@ void ethernet_alloc_rx_frames() {
 			XEmacPs_BdClearRxNew(rxbd);
 			XEmacPs_BdSetAddressRx(rxbd, RxFrame+bd_index*FRAME_SIZE); // FIXME redundant?
 
-			/*if (bd_index == RXBD_CNT-1) {
-				XEmacPs_BdSetRxWrap();
-			}*/
-
 			Status = XEmacPs_BdRingToHw(rxring, 1, rxbd);
 			if (Status != XST_SUCCESS) {
 				printf("EMAC: Error committing RxBD to HW\n");
@@ -358,6 +351,7 @@ int frame_receive_lock = 0;
 
 static void XEmacPsRecvHandler(void *Callback)
 {
+	u32 status;
 	XEmacPs* EmacPsInstancePtr = (XEmacPs *) Callback;
 
 	XEmacPs_BdRing* rxring = &(XEmacPs_GetRxRing(EmacPsInstancePtr));
@@ -390,15 +384,6 @@ static void XEmacPsRecvHandler(void *Callback)
 
 			Xil_DCacheInvalidateRange((UINTPTR)frame_ptr, FRAME_SIZE);
 
-			// store size in big endian
-			/*for (int j=0; j<rx_bytes; j++) {
-				int y = j;
-				printf("%02x",frame_ptr[y]);
-				if (y%4==3) printf(" ");
-				if (y%32==31) printf("\n");
-			}
-			printf("\n==========================================\n");*/
-
 			if (frames_backlog<FRAME_MAX_BACKLOG) {
 				// copy the frame to the backlog (frames that amiga hasn't fetched yet)
 				uint8_t* frame_bl_ptr = (uint8_t*)(RX_BACKLOG_ADDRESS+frames_backlog*FRAME_SIZE);
@@ -413,7 +398,7 @@ static void XEmacPsRecvHandler(void *Callback)
 
 				//printf("bd %d [%d] copied from %p to %p\n", bd_idx, rx_bytes, frame_ptr, frame_bl_ptr);
 			} else {
-				printf("EMAC: frames_backlog full\n");
+				//printf("EMAC: frames_backlog full\n");
 			}
 
 			XEmacPs_BdClearRxNew(cur_bd_ptr);
@@ -424,7 +409,7 @@ static void XEmacPsRecvHandler(void *Callback)
 
 		int Status = XEmacPs_BdRingFree(rxring, num_rx_bufs, rxbdset);
 		if (Status != XST_SUCCESS) {
-			printf("EMAC: Error freeing RxBDs\n");
+			//printf("EMAC: Error freeing RxBDs\n");
 		} else {
 			//printf("EMAC: freed %d RxBDs\n", num_rx_bufs);
 		}
@@ -434,7 +419,7 @@ static void XEmacPsRecvHandler(void *Callback)
 		//printf("EMAC: backlog %d fetched %d\n", frames_backlog, frames_received_from_backlog);
 	}
 
-	u32 status = XEmacPs_ReadReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET);
+	status = XEmacPs_ReadReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET);
 	XEmacPs_WriteReg(EmacPsInstancePtr->Config.BaseAddress, XEMACPS_RXSR_OFFSET, status);
 }
 
@@ -738,7 +723,7 @@ static u32 micrel_auto_negotiate(XEmacPs *xemacpsp, u32 phy_addr)
 			XEmacPs_PhyRead(xemacpsp, phy_addr, IEEE_COPPER_SPECIFIC_STATUS_REG_2,  &temp);
 			timeout_counter++;
 
-			if (timeout_counter > 4) {
+			if (timeout_counter > 2) {
 				printf("PHY: Auto negotiation timeout\n");
 				break;
 			}
